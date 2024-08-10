@@ -11,27 +11,27 @@ class nerfitModel(nn.Module):
         self.bert_model = AutoModel.from_pretrained(model_name)
         hidden_dim = self.bert_model.config.hidden_size
         self.projection_layer = nn.Linear(hidden_dim, projection_dim)
-        self.entity_embeddings = nn.Parameter(entity_embeddings, requires_grad=False)
+        self.entity_embeddings = F.normalize(nn.Parameter(entity_embeddings, requires_grad=False), p=2, dim=-1) # Shape (num_entities, projection_dim)
 
     def forward(self, input_ids, attention_mask):
         outputs = self.bert_model(input_ids=input_ids, attention_mask=attention_mask)
-        last_hidden_states = outputs.last_hidden_state
+        last_hidden_states = outputs.last_hidden_state # Shape (batch_size, num_tokens, hidden_dim)
 
-        token_embeddings_projected = self.projection_layer(last_hidden_states)
+        token_embeddings_projected = self.projection_layer(last_hidden_states) # Shape (batch_size, num_tokens, projection_dim)
         token_embeddings_normalized = F.normalize(token_embeddings_projected, p=2, dim=-1)
 
-        entity_embeddings_normalized = F.normalize(self.entity_embeddings, p=2, dim=-1)
-        cosine_sim = torch.einsum('btd,cd->btc', token_embeddings_normalized, entity_embeddings_normalized)
+        return token_embeddings_normalized
 
-        return cosine_sim
-
-    def compute_contrastive_loss(self, cosine_sim, labels):
+    def compute_contrastive_loss(self, token_embeddings_normalized, labels):
         pos_mask = labels == 1
         neg_mask = labels == 0
 
+        #TODO: Replace self.entity_embeddings 
+        cosine_sim = torch.einsum('btd,cd->btc', token_embeddings_normalized, self.entity_embeddings)
+        
         positive_scores = cosine_sim[pos_mask]
         negative_scores = cosine_sim[neg_mask]
-
+        
         if positive_scores.size(0) == 0 or negative_scores.size(0) == 0:
             return torch.tensor(0.0, requires_grad=True).to(cosine_sim.device)
 

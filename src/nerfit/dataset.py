@@ -1,33 +1,10 @@
+# Libraries
 import torch
 from torch.utils.data import Dataset
-from fuzzywuzzy import fuzz
 from typing import List, Dict
 from transformers import AutoTokenizer
 from sentence_transformers import SentenceTransformer
 import re
-
-# Helper methods
-def preprocess_text(text:str):
-    text = re.sub(r'[^\w\s]', '', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text.lower()
-
-def find_entity_positions(entity:str, text:str):
-    matches = []
-    pattern = re.compile(r'\b' + re.escape(entity) + r'\b', re.IGNORECASE)
-    for match in pattern.finditer(text):
-        matches.append((match.start(), match.end()))
-    return matches
-
-def fuzzy_find_entity(entity:str, text:str, threshold=90):
-    tokens = text.split()
-    for i in range(len(tokens)):
-        window = ' '.join(tokens[i:i+len(entity.split())])
-        if fuzz.ratio(entity.lower(), window.lower()) >= threshold:
-            start_idx = text.lower().find(window.lower())
-            end_idx = start_idx + len(window)
-            return (start_idx, end_idx)
-    return None
 
 # Dataset
 class nerfitDataset(Dataset):
@@ -57,9 +34,46 @@ class nerfitDataset(Dataset):
         annot = self.annotations[idx]
         return self._collate_HuggingFace(annot)
 
-    def _collate_HuggingFace(self, annotation):
+    def _parse_annotation(annotation: str):
+        pattern = re.compile(r'\[(.*?)\]\((.*?): (.*?)\)')
+        matches = pattern.finditer(annotation)
+
+        text = annotation
+        entities = []
+        offset = 0
+
+        for m in matches:
+            entity = m.group(1)
+            label = m.group(2)
+            description = m.group(3)
+            start_idx = m.start() - offset
+            end_idx = start_idx + len(entity)
+
+            entities.append({
+                "start": start_idx,
+                "end": end_idx,
+                "entity": entity,
+                "label": label,
+                "description": description
+            })
+
+            # Replace the annotated part with the entity name in the text
+            annotated_text = m.group(0)
+            text = text[:m.start()-offset] + entity + text[m.end()-offset:]
+
+            # Update the offset to account for the removed annotation
+            offset += len(annotated_text) - len(entity)
+
+        return {
+            "text": text,
+            "entities": entities
+        }            
+
+    def _collate_pretraining(self, annotation):
+        # Parse text
+        annot = self._parse_annotation(annotation)
         tokens = self.tokenizer.encode_plus(
-            annotation['input'],
+            annot['text'],
             truncation=True,
             return_offsets_mapping=True,
             return_tensors='pt'
@@ -70,29 +84,87 @@ class nerfitDataset(Dataset):
 
         labels = torch.zeros(len(self.entity_descriptions), len(input_ids), dtype=torch.float32)
         for ent in annotation['output']:
-            entity, label = ent.split('<>')[0].strip(), ent.split('<>')[1].strip()
-            if entity == '' or label == '':
-                continue
-            positions = find_entity_positions(entity, annotation['input'])
-            if not positions:
-                position = fuzzy_find_entity(entity, annotation['input'])
-                if position:
-                    positions = [position]
-            if positions:
-                for start, end in positions:
-                    start_token_idx = end_token_idx = None
-                    for idx, (token_start, token_end) in enumerate(offset_mapping):
-                        if token_start <= start < token_end:
-                            start_token_idx = idx
-                        if token_start < end <= token_end:
-                            end_token_idx = idx + 1
-                            break
-                    if start_token_idx is not None and end_token_idx is not None:
-                        label_idx = list(self.entity_descriptions.keys()).index(label)
-                        labels[label_idx, start_token_idx:end_token_idx] = 1.0
+            # 
+            start_token_idx = end_token_idx = None
+            for idx, (token_start, token_end) in enumerate(offset_mapping):
+                if token_start <= ent['start'] < token_end:
+                    start_token_idx = idx
+                if token_start < ent['end'] <= token_end:
+                    end_token_idx = idx + 1
+                    break
+            label_idx = list(self.entity_descriptions.keys()).index(label)
+            labels[label_idx, start_token_idx:end_token_idx] = 1.0
 
         return {
             'input_ids': input_ids,
             'attention_mask': attention_mask,
             'labels': labels
         }
+
+    def _collate_NER(self, annotation):
+        # Tokenize text
+        annot = self._parse_annotation(annotation)
+        tokens = self.tokenizer.encode_plus(
+            annot['text'],
+            truncation=True,
+            return_offsets_mapping=True,
+            return_tensors='pt',
+        )
+
+        # Create array to store class labels for tokens
+        targets = []
+        ents = sorted(annot['entities'], key=lambda x: x[0])  # sort entities by start position
+        ent_idx = 0
+        num_ents = len(ents)
+
+        # Process each token
+        for c, d in torch.squeeze(tokens['offset_mapping']):
+            # Special token
+            if c == 0 and d == 0:
+                targets.append(-100)  # Append label for special tokens
+                continue
+
+            # Manage entity indices
+            while ent_idx < num_ents and ents[ent_idx][1] < c:
+                ent_idx += 1  # Move past entities that end before this token starts
+
+            # Check if current token is within any entity
+            hit = False
+            if ent_idx < num_ents and ents[ent_idx][0] <= c < ents[ent_idx][1]:
+                label = ents[ent_idx][2]
+                # Check if it's the start of an entity
+                if c == ents[ent_idx][0]:
+                    targets.append(self.tag2idx['B-' + label])
+                else:
+                    targets.append(self.tag2idx['I-' + label])
+                hit = True
+            # If no entity matches, mark as O (Outside any entity)
+            if not hit:
+                targets.append(self.tag2idx['O'])
+
+        return {
+            'input_ids': torch.squeeze(tokens['input_ids']),
+            'attention_mask': torch.squeeze(tokens['attention_mask']),
+            'token_type_ids': torch.squeeze(tokens.get('token_type_ids', torch.zeros_like(tokens['input_ids']))),  # safe handling in case token_type_ids are not returned
+            'labels': torch.LongTensor(targets)
+        }
+
+    def display_tokens_and_labels(self, idx):
+        # Get item data
+        item = self.__getitem__(idx)
+
+        # Decode tokens to text
+        tokens = self.tokenizer.convert_ids_to_tokens(item['input_ids'])
+
+        # Retrieve labels
+        labels = item['labels'].tolist()
+
+        # Reverse map from indices to labels (for displaying purposes)
+        idx2tag = {v: k for k, v in self.tag2idx.items()}
+
+        # Prepare display format
+        token_label_pairs = [(token, idx2tag.get(label, 'O')) for token, label in zip(tokens, labels)]
+
+        # Print or return the formatted token-label pairs
+        for token, label in token_label_pairs:
+            print(f"{token} [{label}]")

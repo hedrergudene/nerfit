@@ -24,7 +24,46 @@ The system is designed to identify and label entities in text using a contrastiv
 
 ### Data Processing
 
-The dataset class (`nuNERDataset`) precomputes embeddings for entity descriptions and creates a lookup embedding matrix. It uses exact and fuzzy matching to find entity positions in the text and constructs a binary label matrix indicating the presence of entities in the text.
+The dataset class (`nuNERDataset`) comprises most of the required operations to turn our natural language data into training inputs. However, a previous standarisation is demanded given the variety of NER datasets, in order to obtain a unified input with this format:
+
+```
+{
+    'text': 'set an alarm for two hours from now',
+    'entities: [17,35,'time']
+}
+```
+
+The following example if based on Alexa massive dataset:
+
+```python
+def parse_annotation(annotation: str):
+    pattern = re.compile(r'\[(.*?): (.*?)\]')
+    matches = pattern.finditer(annotation)
+    text = annotation
+    entities = []
+    offset = 0
+    for m in matches:
+        entity = m.group(2).strip()
+        label = m.group(1)
+        start_idx = m.start() - offset
+        end_idx = start_idx + len(entity)
+        entities.append([start_idx, end_idx, label])
+        # Replace the annotated part with the entity name in the text
+        annotated_text = m.group(0)
+        text = text[:m.start()-offset] + entity + text[m.end()-offset:]
+        # Update the offset to account for the removed annotation
+        offset += len(annotated_text) - len(entity)
+    return {
+        "text": text,
+        "entities": entities
+    } 
+```
+
+This method has to be included in `nerfitDataset` class.
+
+### Embedding lookup table
+
+Next step is to build a mapping between entity labels and a vector representation. To that end, a description of the label should be provided to a sentence transformers model, that is already annotated in the data in case of zero-shot "open" datasets, and must be provided otherwise. The first case is trivial; the second is solved by using an LLM together with some samples, and it's implemented in `build_lookup_table.py`.
 
 ### Data Collator
 
