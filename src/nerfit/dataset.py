@@ -3,7 +3,6 @@ import torch
 from torch.utils.data import Dataset
 from typing import List, Dict
 from transformers import AutoTokenizer
-from sentence_transformers import SentenceTransformer
 import re
 
 # Dataset
@@ -11,28 +10,21 @@ class nerfitDataset(Dataset):
     def __init__(
             self,
             annotations:Dict[str,Dict[str,str]],
-            st_model:SentenceTransformer,
-            encoder_tokenizer:AutoTokenizer,
-            entity_descriptions:Dict[str,str]
+            ent2emb:Dict[str,torch.Tensor],
+            encoder_tokenizer:AutoTokenizer
     ):
         self.annotations = annotations
-        self.st_model = st_model
         self.tokenizer = encoder_tokenizer
-        self.entity_descriptions = entity_descriptions
-        self.entity_embeddings = self._compute_entity_embeddings()
-
-    def _compute_entity_embeddings(self):
-        descriptions = list(self.entity_descriptions.values())
-        with torch.no_grad():
-            embeddings = self.st_model.encode(descriptions, convert_to_tensor=True, normalize_embeddings=True)
-        return embeddings
+        self.ent2emb = ent2emb
+        self.label2id = {label: idx for idx, label in enumerate(self.ent2emb.keys())}
+        self.id2label = {idx: label for label, idx in self.label2id.items()}
 
     def __len__(self):
         return len(self.annotations)
 
     def __getitem__(self, idx):
         annot = self.annotations[idx]
-        return self._collate_HuggingFace(annot)
+        return self._collate_pretraining(annot)
 
     def _parse_annotation(annotation: str):
         pattern = re.compile(r'\[(.*?)\]\((.*?): (.*?)\)')
@@ -43,19 +35,11 @@ class nerfitDataset(Dataset):
         offset = 0
 
         for m in matches:
-            entity = m.group(1)
-            label = m.group(2)
-            description = m.group(3)
+            entity = m.group(1).strip()
             start_idx = m.start() - offset
             end_idx = start_idx + len(entity)
 
-            entities.append({
-                "start": start_idx,
-                "end": end_idx,
-                "entity": entity,
-                "label": label,
-                "description": description
-            })
+            entities.append([start_idx, end_idx, entity])
 
             # Replace the annotated part with the entity name in the text
             annotated_text = m.group(0)
@@ -82,26 +66,31 @@ class nerfitDataset(Dataset):
         input_ids = tokens['input_ids'].squeeze()
         attention_mask = tokens['attention_mask'].squeeze()
 
-        labels = torch.zeros(len(self.entity_descriptions), len(input_ids), dtype=torch.float32)
-        for ent in annotation['output']:
-            # 
+        embeddings = []
+        labels = []
+        for ent in annot['entities']:
+            #
             start_token_idx = end_token_idx = None
             for idx, (token_start, token_end) in enumerate(offset_mapping):
-                if token_start <= ent['start'] < token_end:
+                if token_start <= ent[0] < token_end:
                     start_token_idx = idx
-                if token_start < ent['end'] <= token_end:
+                if token_start < ent[1] <= token_end:
                     end_token_idx = idx + 1
                     break
-            label_idx = list(self.entity_descriptions.keys()).index(label)
-            labels[label_idx, start_token_idx:end_token_idx] = 1.0
+            embeddings.append(self.ent2emb[ent[2]].unsqueeze(0))
+            lab = torch.tensor([1 if idx in list(range(start_token_idx, end_token_idx)) else 0 for idx in range(len(input_ids))], dtype=torch.int32)
+            labels.append(lab.unsqueeze(0))  # Add an extra dimension for concatenation
 
         return {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'labels': labels
+            'input_ids': input_ids,                                                         # Shape (num_tokens)
+            'attention_mask': attention_mask,                                               # Shape (num_tokens)
+            'embeddings': torch.cat(embeddings, dim=0) if embeddings else torch.tensor([]), # Shape (num_entities, embed_dim)
+            'labels': torch.cat(labels, dim=0) if labels else torch.tensor([])              # Shape (num_entities, num_tokens)
         }
 
-    def _collate_NER(self, annotation):
+
+    """
+    def _collate_NER_IOB(self, annotation):
         # Tokenize text
         annot = self._parse_annotation(annotation)
         tokens = self.tokenizer.encode_plus(
@@ -168,3 +157,4 @@ class nerfitDataset(Dataset):
         # Print or return the formatted token-label pairs
         for token, label in token_label_pairs:
             print(f"{token} [{label}]")
+    """

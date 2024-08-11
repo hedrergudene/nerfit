@@ -13,16 +13,19 @@ class nerfitModel(nn.Module):
         self.projection_layer = nn.Linear(hidden_dim, projection_dim)
         self.entity_embeddings = F.normalize(nn.Parameter(entity_embeddings, requires_grad=False), p=2, dim=-1) # Shape (num_entities, projection_dim)
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, labels=None):
         outputs = self.bert_model(input_ids=input_ids, attention_mask=attention_mask)
         last_hidden_states = outputs.last_hidden_state # Shape (batch_size, num_tokens, hidden_dim)
 
         token_embeddings_projected = self.projection_layer(last_hidden_states) # Shape (batch_size, num_tokens, projection_dim)
         token_embeddings_normalized = F.normalize(token_embeddings_projected, p=2, dim=-1)
 
-        return token_embeddings_normalized
+        if labels is not None:
+            return self._compute_contrastive_loss(token_embeddings_normalized, labels)
+        else:
+            return token_embeddings_normalized
 
-    def compute_contrastive_loss(self, token_embeddings_normalized, labels):
+    def _compute_contrastive_loss(self, token_embeddings_normalized, labels):
         pos_mask = labels == 1
         neg_mask = labels == 0
 

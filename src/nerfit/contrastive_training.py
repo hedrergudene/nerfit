@@ -57,8 +57,8 @@ def main(
     projection_dim = st_model.get_sentence_embedding_dimension()
     tokenizer = AutoTokenizer.from_pretrained(encoder_model_name)
 
-    train_dts = nerfitDataset([v for _,v in annotations.items()][:80], st_model, tokenizer, entity_descriptions)
-    val_dts = nerfitDataset([v for _,v in annotations.items()][80:100], st_model, tokenizer, entity_descriptions)
+    train_dts = nerfitDataset([v for _,v in annotations.items()][:80], ent2emb, tokenizer)
+    val_dts = nerfitDataset([v for _,v in annotations.items()][80:100], ent2emb, tokenizer)
 
     train_dtl  = torch.utils.data.DataLoader(train_dts, batch_size=batch_size, collate_fn=nerfitDataCollator(pad_token_id=tokenizer.pad_token_id), shuffle=True)
     val_dtl  = torch.utils.data.DataLoader(val_dts, batch_size=2*batch_size, collate_fn=nerfitDataCollator(pad_token_id=tokenizer.pad_token_id), shuffle=True)
