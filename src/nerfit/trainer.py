@@ -2,55 +2,68 @@
 import torch
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
+from transformers import AutoTokenizer
 from accelerate import Accelerator
 from itertools import cycle
 import json
 import os
 from typing import Optional, List, Callable, Dict, Any
 from .collator import nerfitDataCollator
+from .model import nerfitModel
 
 
 # Configuration
 class TrainerConfig:
     def __init__(
         self,
-        model: torch.nn.Module,
-        tokenizer: Any,
+        model_name: str,
         train_dataset: torch.utils.data.Dataset,
         val_dataset: torch.utils.data.Dataset,
         ent2emb: Dict[str, torch.Tensor],
-        num_steps: int,
-        callback_steps: int,
-        save_steps: int,
-        batch_size: int,
-        backbone_lr: float,
-        projection_lr: float,
-        output_dir: str,
-        metrics_output_path: str,
+        lora_r: int = 16,
+        lora_alpha: int = 32,
+        lora_dropout: float = 0.1,
+        inference_mode: bool = False,
+        num_steps: int = 1000,
+        callback_steps: int = 100,
+        save_steps: int = 100,
+        batch_size: int = 32,
+        backbone_lr: float = 2e-5,
+        projection_lr: float = 1e-4,
+        output_dir: str = './model',
+        metrics_output_path: str = './metrics.json',
         patience: Optional[int] = None
     ):
         """
         Args:
-            model (torch.nn.Module): The model to be trained.
+            model_name (str): Name of the pre-trained model to use.
             tokenizer (Any): Tokenizer used for text encoding.
             train_dataset (torch.utils.data.Dataset): Training dataset.
             val_dataset (torch.utils.data.Dataset): Validation dataset.
             ent2emb (Dict[str, torch.Tensor]): Entity to embedding lookup dictionary.
-            num_steps (int): Number of training steps.
-            callback_steps (int): Number of steps between each callback.
-            save_steps (int): Number of steps between each model checkpoint save.
-            batch_size (int): Batch size for training.
-            backbone_lr (float): Learning rate for the backbone model.
-            projection_lr (float): Learning rate for the projection layer.
-            output_dir (str): Directory to save model checkpoints.
-            metrics_output_path (str): File path to save training metrics.
-            patience (Optional[int]): Number of steps to wait for improvement before stopping.
+            projection_dim (int): Dimension of the projection layer output.
+            lora_r (int, optional): LoRA rank parameter. Defaults to 16.
+            lora_alpha (int, optional): LoRA alpha parameter. Defaults to 32.
+            lora_dropout (float, optional): Dropout rate for LoRA. Defaults to 0.1.
+            inference_mode (bool, optional): If True, sets model to inference mode. Defaults to False.
+            num_steps (int, optional): Number of training steps. Defaults to 1000.
+            callback_steps (int, optional): Number of steps between each callback. Defaults to 100.
+            save_steps (int, optional): Number of steps between each model checkpoint save. Defaults to 100.
+            batch_size (int, optional): Batch size for training. Defaults to 32.
+            backbone_lr (float, optional): Learning rate for the backbone model. Defaults to 2e-5.
+            projection_lr (float, optional): Learning rate for the projection layer. Defaults to 1e-4.
+            output_dir (str, optional): Directory to save model checkpoints. Defaults to './model'.
+            metrics_output_path (str, optional): File path to save training metrics. Defaults to './metrics.json'.
+            patience (Optional[int], optional): Number of steps to wait for improvement before stopping. Defaults to None.
         """
-        self.model = model
-        self.tokenizer = tokenizer
+        self.model_name = model_name
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.ent2emb = ent2emb
+        self.lora_r = lora_r
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
+        self.inference_mode = inference_mode
         self.num_steps = num_steps
         self.callback_steps = callback_steps
         self.save_steps = save_steps
@@ -62,6 +75,7 @@ class TrainerConfig:
         self.patience = patience
 
 
+
 # Main class
 class nerfitTrainer:
     def __init__(self, config: TrainerConfig):
@@ -70,8 +84,8 @@ class nerfitTrainer:
             config (TrainerConfig): Configuration object containing all necessary training parameters.
         """
         self.config = config
-        self.model = config.model
-        self.tokenizer = config.tokenizer
+        self.model = self._prepare_model()
+        self.tokenizer = self._prepare_tokenizer()
         self.train_dataset = config.train_dataset
         self.val_dataset = config.val_dataset
         self.ent2emb = config.ent2emb
@@ -115,6 +129,45 @@ class nerfitTrainer:
         )
         train_dataloader, val_dataloader = self.accelerator.prepare(train_dataloader, val_dataloader)
         return train_dataloader, val_dataloader
+
+    def _prepare_tokenizer(self):
+        """
+        Prepares the tokenizer for the training process.    
+
+        This method loads the tokenizer based on the model name provided in the configuration.
+        The tokenizer is essential for encoding text data into input IDs and attention masks
+        that the model can process.
+        """
+        # Load the tokenizer using the model name from the configuration
+        tokenizer = AutoTokenizer.from_pretrained(self.config.model_name)   
+
+        # Return the prepared tokenizer
+        return tokenizer
+
+    def _prepare_model(self):
+        """
+        Prepares the nerfitModel based on the provided configuration.
+    
+        Returns:
+            torch.nn.Module: The prepared model.
+        """
+        model_name = self.config.model_name
+        projection_dim = self.config.projection_dim
+        lora_r = self.config.lora_r
+        lora_alpha = self.config.lora_alpha
+        lora_dropout = self.config.lora_dropout
+        inference_mode = self.config.inference_mode
+    
+        model = nerfitModel(
+            model_name=model_name,
+            projection_dim=projection_dim,
+            lora_r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            inference_mode=inference_mode
+        )
+    
+        return model
 
     def _data_collator(self) -> Callable:
         """
