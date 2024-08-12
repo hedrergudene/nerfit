@@ -1,4 +1,5 @@
 transformers==4.44.0
+peft==0.12.0
 accelerate==0.33.0
 sentence_transformers==3.0.1
 litellm==1.43.7

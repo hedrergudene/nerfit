@@ -2,13 +2,12 @@
 import os
 import logging as log
 import sys
-from typing import List
+from typing import List, Dict
+from transformers import AutoModelForMaskedLM, AutoModelForTokenClassification
 from sentence_transformers import SentenceTransformer
 import torch
 from litellm import completion
-from safetensors.torch import save_file
 from .dataset import nerfitDataset
-import fire
 
 
 # Setup logs
@@ -21,23 +20,16 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 
-# Main method. Fire automatically allign method arguments with parse commands from console
-def main(
+# Helper method to get sentence embeddings for entities classes
+def build_lookup_table(
     annotations:List[str],
+    st_model:SentenceTransformer,
     llm:str = "gpt-4o-mini",
-    st_model:str = "sentence-transformers/LaBSE",
-    output_path:str = './input'
-) -> None:
-
-    # Check input folder exists
-    os.makedirs(output_path, exist_ok=True)
+) -> Dict[str,torch.Tensor]:
 
     # Check env variable has been set
     if not os.getenv("OPENAI_API_KEY"):
         raise ValueError(f"Environment variable 'OPENAI_API_KEY' must be set.")
-
-    # Load model
-    model = SentenceTransformer(st_model)
 
     # Build label-samples mapping
     ent2samples = {}
@@ -63,12 +55,23 @@ def main(
             ]
         )
         with torch.no_grad():
-            ent2emb[label] = model.encode([response.choices[0].message.content], normalize_embeddings=True, show_progress_bar=False, convert_to_tensor=True).flatten()
+            ent2emb[label] = st_model.encode([response.choices[0].message.content], normalize_embeddings=True, show_progress_bar=False, convert_to_tensor=True).flatten()
     
-    # Save tensors
-    save_file(ent2emb, os.path.join(output_path, "ent2emb.safetensors"))
+    # Output
+    return ent2emb
 
 
-# Launch script
-if __name__=='__main__':
-    fire.Fire(main)
+# Helper method to save weights of NER models without last linear layer
+def save_updated_fill_mask_model(model:AutoModelForTokenClassification, save_directory:str):
+
+    # Extract the base model (original fill-mask model)
+    base_model = getattr(model, model.base_model_prefix)  # Generic way to access the base model
+
+    # Load the corresponding masked language model (fill-mask model)
+    fill_mask_model = AutoModelForMaskedLM.from_pretrained(model)
+
+    # Replace the base model with the updated one
+    setattr(fill_mask_model, fill_mask_model.base_model_prefix, base_model)
+
+    # Save the updated fill-mask model
+    fill_mask_model.save_pretrained(save_directory)
