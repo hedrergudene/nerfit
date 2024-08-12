@@ -26,7 +26,7 @@ class nerfitDataset(Dataset):
         annot = self.annotations[idx]
         return self._collate_pretraining(annot)
 
-    def _parse_annotation(annotation: str):
+    def _parse_annotation(self, annotation: str):
         pattern = re.compile(r'\[(.*?)\]\((.*?): (.*?)\)')
         matches = pattern.finditer(annotation)
 

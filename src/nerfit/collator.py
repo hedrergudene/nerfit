@@ -25,7 +25,7 @@ class nerfitDataCollator:
         max_labels_len = max(item.size(1) if item.numel() > 0 else 0 for item in labels_batch)
 
         # Initialize the labels tensor with -100 for padding
-        labels_padded = torch.full((len(batch), max_num_entities, max_labels_len), -100, dtype=torch.long)
+        labels_padded = torch.full((len(batch), max_num_entities, max_labels_len), -100, dtype=torch.float32)
         embeddings_padded = torch.zeros((len(batch), max_num_entities, self.projection_dim), dtype=torch.float32)
 
         for i, (labels, embeddings) in enumerate(zip(labels_batch, embeddings_batch)):
