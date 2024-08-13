@@ -1,15 +1,17 @@
 # Libraries
 import torch
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
 from accelerate import Accelerator
 from itertools import cycle
 import json
 import os
-from typing import Optional, List, Callable, Dict, Any
+from typing import Optional, List, Callable, Dict, Any, Union
+from .dataset import nerfitDataset
 from .collator import nerfitDataCollator
 from .model import nerfitModel
+from .utils import build_lookup_table, build_lookup_table_from_string
 
 
 # Configuration
@@ -17,8 +19,22 @@ class TrainerConfig:
     def __init__(
         self,
         model_name: str,
-        train_dataset: torch.utils.data.Dataset,
-        val_dataset: torch.utils.data.Dataset,
+        train_annotations: List[
+            Union[
+                Dict[str,str],
+                Dict[str,List[List[str]]],
+                Dict[str,List[Dict[str,Union[int,str]]]],
+                str
+            ]
+        ],
+        val_annotations: List[
+            Union[
+                Dict[str,str],
+                Dict[str,List[List[str]]],
+                Dict[str,List[Dict[str,Union[int,str]]]],
+                str
+            ]
+        ],
         ent2emb: Dict[str, torch.Tensor],
         lora_r: int = 16,
         lora_alpha: int = 32,
@@ -37,9 +53,8 @@ class TrainerConfig:
         """
         Args:
             model_name (str): Name of the pre-trained model to use.
-            tokenizer (Any): Tokenizer used for text encoding.
-            train_dataset (torch.utils.data.Dataset): Training dataset.
-            val_dataset (torch.utils.data.Dataset): Validation dataset.
+            train_annotations (torch.utils.data.Dataset): Training dataset.
+            val_annotations (torch.utils.data.Dataset): Validation dataset.
             ent2emb (Dict[str, torch.Tensor]): Entity to embedding lookup dictionary.
             projection_dim (int): Dimension of the projection layer output.
             lora_r (int, optional): LoRA rank parameter. Defaults to 16.
@@ -57,8 +72,8 @@ class TrainerConfig:
             patience (Optional[int], optional): Number of steps to wait for improvement before stopping. Defaults to None.
         """
         self.model_name = model_name
-        self.train_dataset = train_dataset
-        self.val_dataset = val_dataset
+        self.train_annotations = train_annotations
+        self.val_annotations = val_annotations
         self.ent2emb = ent2emb
         self.lora_r = lora_r
         self.lora_alpha = lora_alpha
@@ -77,7 +92,7 @@ class TrainerConfig:
 
 
 # Main class
-class nerfitTrainer:
+class Trainer:
     def __init__(self, config: TrainerConfig):
         """
         Args:
@@ -86,9 +101,9 @@ class nerfitTrainer:
         self.config = config
         self.model = self._prepare_model()
         self.tokenizer = self._prepare_tokenizer()
-        self.train_dataset = config.train_dataset
-        self.val_dataset = config.val_dataset
-        self.ent2emb = config.ent2emb
+        self.train_annotations = config.train_annotations
+        self.val_annotations = config.val_annotations
+        self.ent2emb = self._prepare_embeddings(config.ent2emb)
         self.accelerator = Accelerator()
         self.optimizer = self._configure_optimizer()
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.config.num_steps)
@@ -96,17 +111,60 @@ class nerfitTrainer:
         self.best_val_loss = float('inf')
         self.early_stopping_counter = 0
 
-    def _configure_optimizer(self) -> torch.optim.Optimizer:
+    @staticmethod
+    def parse_annotation(
+        annotations:List[
+            Union[
+                Dict[str,str],
+                Dict[str,List[List[str]]],
+                Dict[str,List[Dict[str,Union[int,str]]]],
+                str
+            ]
+        ]
+    ) -> List[Dict[str,Union[str]]]:
+        raise NotImplementedError(f"This is a base class; you must build your own parsing strategy for your dataset.")
+
+    def _prepare_embeddings(self, ent2emb:Optional[Dict[str, Union[torch.Tensor, str]]]) -> torch.Tensor:
+        if ent2emb is None:
+            return build_lookup_table(self.parse_annotation(self.train_annotations))
+        elif all([isinstance(v,str) for _,v in ent2emb.items()]):
+            return build_lookup_table_from_string(ent2emb)
+        elif all([isinstance(v,torch.Tensor) for _,v in ent2emb.items()]):
+            return ent2emb
+        else:
+            raise ValueError(f"`ent2emb` must either be None, a dictionary with label-description pairs, or label-tensor pairs.")
+
+    def _prepare_dataset(self) -> tuple[Dataset, Dataset]:
         """
-        Configures the optimizer with different learning rates for different model parts.
+        Prepares the Dataset objects for training and validation splits.
 
         Returns:
-            torch.optim.Optimizer: The configured optimizer.
+            tuple: A tuple containing the training and validation Dataset objects.
         """
-        return torch.optim.Adam([
-            {'params': self.model.base_model.parameters(), 'lr': self.config.backbone_lr},
-            {'params': self.model.projection_layer.parameters(), 'lr': self.config.projection_lr}
-        ])
+        train_dataset = nerfitDataset(
+            self.parse_annotation(self.train_annotations),
+            self.ent2emb,
+            self.tokenizer
+        )
+        val_dataset = nerfitDataset(
+            self.parse_annotation(self.val_annotations),
+            self.ent2emb,
+            self.tokenizer
+        )
+        return train_dataset, val_dataset
+
+    def _data_collator(self) -> Callable:
+        """
+        Returns the data collator function for padding and batching the data.
+
+        Returns:
+            Callable: The data collator function.
+        """
+        return nerfitDataCollator(
+            pad_token_id=self.tokenizer.pad_token_id,
+            max_length=self.model.base_model.config.max_position_embeddings,
+            projection_dim=self.model.projection_layer.out_features
+        )
 
     def _prepare_dataloader(self) -> tuple[DataLoader, DataLoader]:
         """
@@ -115,14 +173,15 @@ class nerfitTrainer:
         Returns:
             tuple: A tuple containing the training and validation DataLoader objects.
         """
+        train_dataset, val_dataset = self._prepare_dataset()
         train_dataloader = DataLoader(
-            self.train_dataset,
+            train_dataset,
             batch_size=self.config.batch_size,
             shuffle=True,
             collate_fn=self._data_collator()
         )
         val_dataloader = DataLoader(
-            self.val_dataset,
+            val_dataset,
             batch_size=self.config.batch_size * 2,
             shuffle=False,
             collate_fn=self._data_collator()
@@ -130,7 +189,7 @@ class nerfitTrainer:
         train_dataloader, val_dataloader = self.accelerator.prepare(train_dataloader, val_dataloader)
         return train_dataloader, val_dataloader
 
-    def _prepare_tokenizer(self):
+    def _prepare_tokenizer(self) -> AutoTokenizer:
         """
         Prepares the tokenizer for the training process.    
 
@@ -144,7 +203,7 @@ class nerfitTrainer:
         # Return the prepared tokenizer
         return tokenizer
 
-    def _prepare_model(self):
+    def _prepare_model(self) -> torch.nn.Module:
         """
         Prepares the nerfitModel based on the provided configuration.
     
@@ -152,7 +211,7 @@ class nerfitTrainer:
             torch.nn.Module: The prepared model.
         """
         model_name = self.config.model_name
-        projection_dim = self.config.projection_dim
+        projection_dim = self.ent2emb.values()[0].shape[-1]
         lora_r = self.config.lora_r
         lora_alpha = self.config.lora_alpha
         lora_dropout = self.config.lora_dropout
@@ -169,18 +228,17 @@ class nerfitTrainer:
     
         return model
 
-    def _data_collator(self) -> Callable:
+    def _configure_optimizer(self) -> torch.optim.Optimizer:
         """
-        Returns the data collator function for padding and batching the data.
+        Configures the optimizer with different learning rates for different model parts.
 
         Returns:
-            Callable: The data collator function.
+            torch.optim.Optimizer: The configured optimizer.
         """
-        return nerfitDataCollator(
-            pad_token_id=self.tokenizer.pad_token_id,
-            max_length=self.model.base_model.config.max_position_embeddings,
-            projection_dim=self.model.projection_layer.out_features
-        )
+        return torch.optim.Adam([
+            {'params': self.model.base_model.parameters(), 'lr': self.config.backbone_lr},
+            {'params': self.model.projection_layer.parameters(), 'lr': self.config.projection_lr}
+        ])
 
     def fit(self):
         """

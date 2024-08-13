@@ -23,7 +23,7 @@ root.addHandler(handler)
 # Helper method to get sentence embeddings for entities classes
 def build_lookup_table(
     annotations:List[str],
-    st_model:SentenceTransformer,
+    st_model_name:str="sentence-transformers/LaBSE",
     llm:str = "gpt-4o-mini",
 ) -> Dict[str,torch.Tensor]:
 
@@ -45,6 +45,7 @@ def build_lookup_table(
 
     # Create description using LLMs
     ent2emb = {}
+    st_model = SentenceTransformer(st_model_name)
     for label, samples in ent2samples.items():
         samples = '\n* '.join(samples)
         response = completion(
@@ -56,9 +57,26 @@ def build_lookup_table(
         )
         with torch.no_grad():
             ent2emb[label] = st_model.encode([response.choices[0].message.content], normalize_embeddings=True, show_progress_bar=False, convert_to_tensor=True).flatten()
-    
+    del st_model
     # Output
     return ent2emb
+
+
+# Helper method to generate sentence embeddings from natural descriptions of labels
+def build_lookup_table_from_string(
+    ent2emb:Dict[str,str],
+    st_model_name:str="sentence-transformers/LaBSE",
+) -> Dict[str,torch.Tensor]:
+
+    # Create description using LLMs
+    st_model = SentenceTransformer(st_model_name)
+    output = {}
+    for k,v in ent2emb.items():
+        with torch.no_grad():
+            output[k] = st_model.encode([v], normalize_embeddings=True, show_progress_bar=False, convert_to_tensor=True).flatten()
+    del st_model
+    # Output
+    return output
 
 
 # Helper method to save weights of NER models without last linear layer

@@ -51,11 +51,10 @@ class nerfitDataset(Dataset):
         return {
             "text": text,
             "entities": entities
-        }            
+        }
 
-    def _collate_pretraining(self, annotation):
-        # Parse text
-        annot = self._parse_annotation(annotation)
+    def _collate_pretraining(self, annot):
+        # Tokenize
         tokens = self.tokenizer.encode_plus(
             annot['text'],
             truncation=True,
@@ -87,74 +86,3 @@ class nerfitDataset(Dataset):
             'embeddings': torch.cat(embeddings, dim=0) if embeddings else torch.tensor([]), # Shape (num_entities, embed_dim)
             'labels': torch.cat(labels, dim=0) if labels else torch.tensor([])              # Shape (num_entities, num_tokens)
         }
-
-
-    """
-    def _collate_NER_IOB(self, annotation):
-        # Tokenize text
-        annot = self._parse_annotation(annotation)
-        tokens = self.tokenizer.encode_plus(
-            annot['text'],
-            truncation=True,
-            return_offsets_mapping=True,
-            return_tensors='pt',
-        )
-
-        # Create array to store class labels for tokens
-        targets = []
-        ents = sorted(annot['entities'], key=lambda x: x[0])  # sort entities by start position
-        ent_idx = 0
-        num_ents = len(ents)
-
-        # Process each token
-        for c, d in torch.squeeze(tokens['offset_mapping']):
-            # Special token
-            if c == 0 and d == 0:
-                targets.append(-100)  # Append label for special tokens
-                continue
-
-            # Manage entity indices
-            while ent_idx < num_ents and ents[ent_idx][1] < c:
-                ent_idx += 1  # Move past entities that end before this token starts
-
-            # Check if current token is within any entity
-            hit = False
-            if ent_idx < num_ents and ents[ent_idx][0] <= c < ents[ent_idx][1]:
-                label = ents[ent_idx][2]
-                # Check if it's the start of an entity
-                if c == ents[ent_idx][0]:
-                    targets.append(self.tag2idx['B-' + label])
-                else:
-                    targets.append(self.tag2idx['I-' + label])
-                hit = True
-            # If no entity matches, mark as O (Outside any entity)
-            if not hit:
-                targets.append(self.tag2idx['O'])
-
-        return {
-            'input_ids': torch.squeeze(tokens['input_ids']),
-            'attention_mask': torch.squeeze(tokens['attention_mask']),
-            'token_type_ids': torch.squeeze(tokens.get('token_type_ids', torch.zeros_like(tokens['input_ids']))),  # safe handling in case token_type_ids are not returned
-            'labels': torch.LongTensor(targets)
-        }
-
-    def display_tokens_and_labels(self, idx):
-        # Get item data
-        item = self.__getitem__(idx)
-
-        # Decode tokens to text
-        tokens = self.tokenizer.convert_ids_to_tokens(item['input_ids'])
-
-        # Retrieve labels
-        labels = item['labels'].tolist()
-
-        # Reverse map from indices to labels (for displaying purposes)
-        idx2tag = {v: k for k, v in self.tag2idx.items()}
-
-        # Prepare display format
-        token_label_pairs = [(token, idx2tag.get(label, 'O')) for token, label in zip(tokens, labels)]
-
-        # Print or return the formatted token-label pairs
-        for token, label in token_label_pairs:
-            print(f"{token} [{label}]")
-    """

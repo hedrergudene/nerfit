@@ -16,15 +16,16 @@ The system is designed to identify and label entities in text using a contrastiv
 
 ### Key Features
 
-- **Classical NER Setup**: The system uses a finite set of labels with consistent descriptions, simplifying the data processing.
-- **Contrastive Learning**: The model computes a contrastive loss to differentiate between positive and negative samples.
-- **Pretrained Models**: Utilizes pretrained models from Hugging Face and SentenceTransformers for encoding and tokenization.
+- **Classical NER Setup**: The system utilizes a predefined set of entity labels, each with a consistent and comprehensive description, simplifying the data processing and model training.
+- **Contrastive Learning**: Instead of directly predicting labels, the model computes a contrastive loss to differentiate between positive and negative samples, improving the accuracy of entity recognition.
+- **Pretrained Models**: The system leverages pretrained models from Hugging Face and SentenceTransformers for efficient and accurate encoding and tokenization, ensuring state-of-the-art performance.
+
 
 ## Methods
 
-### Data Processing
+The `Trainer` object is responsible for managing the entire training pipeline, from data preparation to model optimization and evaluation. It encapsulates all the necessary components, including the model, tokenizer, data loaders, optimizer, and training loop. The `Trainer` is configured via the `TrainerConfig` class, which allows you to specify various parameters such as learning rates, batch size, and more.
 
-The dataset class (`nuNERDataset`) comprises most of the required operations to turn our natural language data into training inputs. However, a previous standarisation is demanded given the variety of NER datasets, in order to obtain a unified input with this format:
+However, given the rich variety of NER dataset formats available, it's not possible to rule them all. Instead, you have to prepare a small block of code to convert your annotations into the following schema, and encapsulate it into the `parse_annotation` static method within the `Trainer`:
 
 ```
 {
@@ -33,67 +34,57 @@ The dataset class (`nuNERDataset`) comprises most of the required operations to 
 }
 ```
 
-The following example if based on Alexa massive dataset:
+Here you can find some templates that cover most of the NER dataset templates:
 
-```python
-def parse_annotation(annotation: str):
-    pattern = re.compile(r'\[(.*?): (.*?)\]')
-    matches = pattern.finditer(annotation)
-    text = annotation
-    entities = []
-    offset = 0
-    for m in matches:
-        entity = m.group(2).strip()
-        label = m.group(1)
-        start_idx = m.start() - offset
-        end_idx = start_idx + len(entity)
-        entities.append([start_idx, end_idx, label])
-        # Replace the annotated part with the entity name in the text
-        annotated_text = m.group(0)
-        text = text[:m.start()-offset] + entity + text[m.end()-offset:]
-        # Update the offset to account for the removed annotation
-        offset += len(annotated_text) - len(entity)
-    return {
-        "text": text,
-        "entities": entities
-    } 
+<details>
+<summary>
+[Alexa massive dataset](https://huggingface.co/datasets/AmazonScience/massive):
+</summary>
+
+Annotations have this structure:
+
+```text
+[ORG: OpenAI] is based in [LOC: San Francisco].
 ```
 
-This method has to be included in `nerfitDataset` class.
+Therefore, `parse_annotation` method should be like:
 
-### Embedding lookup table
+```python
+class CustomTrainer(Trainer):
+    @staticmethod
+    def parse_annotation(
+        annotations:List[
+            Union[
+                Dict[str,str],
+                Dict[str,List[List[str]]],
+                Dict[str,List[Dict[str,Union[int,str]]]],
+                str
+            ]
+        ]
+    ) -> List[Dict[str,Union[str]]]:
+        output = []
+        for annotation in annotations:
+            pattern = re.compile(r'\[(.*?): (.*?)\]')
+            matches = pattern.finditer(annotation)
+            text = annotation
+            entities = []
+            offset = 0
+            for m in matches:
+                entity = m.group(2).strip()
+                label = m.group(1)
+                start_idx = m.start() - offset
+                end_idx = start_idx + len(entity)
+                entities.append([start_idx, end_idx, label])
+                # Replace the annotated part with the entity name in the text
+                annotated_text = m.group(0)
+                text = text[:m.start()-offset] + entity + text[m.end()-offset:]
+                # Update the offset to account for the removed annotation
+                offset += len(annotated_text) - len(entity)
+            output.append({"text": text,"entities": entities})
+        return output
+```
+</details>
 
-Next step is to build a mapping between entity labels and a vector representation. To that end, a description of the label should be provided to a sentence transformers model, that is already annotated in the data in case of zero-shot "open" datasets, and must be provided otherwise. The first case is trivial; the second is solved by using an LLM together with some samples, and it's implemented in `build_lookup_table.py`.
-
-### Data Collator
-
-The data collator (`NuNERDataCollator`) handles padding of input sequences and concatenation of entity embeddings. It constructs a padded label tensor for each batch.
-
-### Model
-
-The model (`BERTWithProjection`) wraps a BERT model with an additional projection layer to align token embeddings with entity description embeddings. It computes cosine similarities between token embeddings and entity embeddings, and a contrastive loss function is used for training.
-
-### Training Loop
-
-The training loop leverages the `Accelerate` library to handle distributed training. It includes steps for model evaluation, learning rate scheduling, and saving training metrics and the trained model.
-
-## How to Use
-
-1. **Install Dependencies**: Install the required libraries using `pip install -r requirements.txt`.
-2. **Prepare Dataset**: Ensure the dataset is in the correct format and update the `annotations` variable accordingly.
-3. **Run Training**: Execute the training script to train the NER model.
-4. **Evaluate Model**: Use the evaluation functions to assess the model's performance on validation data.
-5. **Inference**: Utilize the trained model to perform NER on new text data.
-
-## Requirements
-
-- `torch`
-- `transformers`
-- `sentence-transformers`
-- `fuzzywuzzy`
-- `accelerate`
-
-Ensure all dependencies are installed before running the scripts.
 
 ## Contributing
 
