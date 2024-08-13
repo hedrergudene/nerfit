@@ -6,8 +6,8 @@ setup(
     description="nerFit: Few-shot entity recognition representation learning",
     author="Antonio Zarauz Moreno",
     author_email="hedrergudene@gmail.com",
-    packages=find_packages(where='src'),  # Finds the packages under 'src'
-    package_dir={'': 'src'},  # Maps the root package to 'src'
+    url="https://github.com/hedrergudene/nerfit",
+    packages=["nerfit"],
     install_requires=[
         "transformers==4.44.0",
         "peft==0.12.0",
