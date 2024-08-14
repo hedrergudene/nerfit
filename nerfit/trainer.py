@@ -45,14 +45,14 @@ class TrainerConfig:
         dataloader_num_workers: int = 4,
         num_steps: int = 1000,
         eval_steps: int = 100,
+        logging_steps: int = 100,
         batch_size: int = 32,
         backbone_lr: float = 2e-5,
         projection_lr: float = 1e-4,
         weight_decay: float = 1e-2,
         output_dir: str = './model',
         metrics_output_path: str = './metrics.json',
-        patience: Optional[int] = None,
-        logging_steps: int = 100  # New parameter for logging frequency
+        patience: Optional[int] = None
     ):
         """
         Args:
@@ -85,6 +85,7 @@ class TrainerConfig:
         self.dataloader_num_workers = dataloader_num_workers
         self.num_steps = num_steps
         self.eval_steps = eval_steps
+        self.logging_steps = logging_steps
         self.batch_size = batch_size
         self.backbone_lr = backbone_lr
         self.projection_lr = projection_lr
@@ -92,7 +93,6 @@ class TrainerConfig:
         self.output_dir = output_dir
         self.metrics_output_path = metrics_output_path
         self.patience = patience
-        self.logging_steps = logging_steps
 
 
 
@@ -248,12 +248,14 @@ class Trainer:
         self.model.train()
         train_iter = cycle(self.train_dataloader)
         loss_values = []
+        history = {}
         val_loss = None  # Initialize validation loss as None
         best_val_loss = float('inf')
         early_stopping_counter = 0
 
         # Initialize the progress bar
         progress_bar = tqdm(range(self.config.num_steps), desc="Training", unit="step")
+        console = Console()
 
         for step in progress_bar:
             batch = next(train_iter)
@@ -264,13 +266,11 @@ class Trainer:
 
             # Update the progress bar with the current training loss
             progress_bar.set_postfix({"train_loss": loss.item(), "val_loss": val_loss if val_loss is not None else "N/A"})
-            console = Console()
 
             #
             # Evaluation
             #
             if (step + 1) % self.config.eval_steps == 0:
-                self._log_training_metrics(loss_values, step)
                 val_loss = self._evaluate(step)  # Update the validation loss
             
                 #
@@ -290,9 +290,18 @@ class Trainer:
                         break
                 # Update the table below the progress bar
                 self._print_metrics_table(step + 1, loss_values[-1], val_loss, console)
+                # Create record
+                history[step] = {
+                "Train Loss": loss_values[-1],
+                "Val Loss": val_loss,
+                "Body LR": self.optimizer.param_groups[0]['lr'],
+                "Head LR": self.optimizer.param_groups[1]['lr']
+            }
 
         # Close the progress bar after training completes
         progress_bar.close()
+
+        return history
 
     def _training_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
@@ -418,25 +427,3 @@ class Trainer:
         unwrapped_model = self.accelerator.unwrap_model(self.model)
         unwrapped_model.base_model.save_pretrained(output_dir)
         self.tokenizer.save_pretrained(output_dir)
-
-    def _log_training_metrics(self, loss_values: List[float], step: int):
-        """
-        Logs training metrics such as average training loss and learning rates.
-
-        Args:
-            loss_values (List[float]): List of loss values for the current callback interval.
-            step (int): The current training step.
-        """
-        avg_train_loss = sum(loss_values[-self.config.eval_steps:]) / self.config.eval_steps
-        lr_body = self.optimizer.param_groups[0]['lr']
-        lr_head = self.optimizer.param_groups[1]['lr']
-        with open(self.config.metrics_output_path, 'a') as f:
-            json.dump({
-                'step': step + 1,
-                'train_loss': avg_train_loss,
-                'lr_body': lr_body,
-                'lr_head': lr_head
-            }, f)
-            f.write('\n')
-
-        print(f"Step {step + 1}/{self.config.num_steps} - Train Loss: {avg_train_loss:.4f} - LR Body: {lr_body:.6f} - LR Head: {lr_head:.6f}")
