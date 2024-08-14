@@ -37,7 +37,7 @@ class TrainerConfig:
         ],
         ent2emb: Dict[str, torch.Tensor],
         peft_lora:bool=False,
-        peft_config:Optional[Dict[str:Union[int,float,bool]]]=None, # {'lora_r':8,'lora_alpha':32,'lora_dropout':0.1, 'use_dora': True}
+        peft_config:Optional[Dict[str,Union[int,float,bool]]]=None, # {'lora_r':8,'lora_alpha':32,'lora_dropout':0.1, 'use_dora': True}
         inference_mode: bool = False,
         num_steps: int = 1000,
         callback_steps: int = 100,
