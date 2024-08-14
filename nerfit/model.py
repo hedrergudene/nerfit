@@ -1,4 +1,5 @@
 # Libraries
+from typing import Optional, List, Dict, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,24 +14,28 @@ class nerfitModel(nn.Module):
             projection_dim:int,
             #temperature:float=1.,
             #eps:float=1e-5,
-            lora_r:int=16,
-            lora_alpha:int=32,
-            lora_dropout:float=0.1,
+            peft_lora:bool=False,
+            peft_config:Optional[Dict[str,Union[int,float,bool]]]=None,
             inference_mode:bool=False
     ):
         super(nerfitModel, self).__init__()
         # Load model
-        self.base_model = get_peft_model(
-            model=AutoModel.from_pretrained(model_name),
-            peft_config=LoraConfig(
-                task_type=TaskType.TOKEN_CLS,
-                inference_mode=inference_mode,
-                r=lora_r,
-                lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
-                use_dora=True
+        if ((peft_lora) & (peft_config is None)):
+            raise ValueError(f"You must specify LoRA parameters.")
+        elif peft_config is not None:
+            self.base_model = get_peft_model(
+                model=AutoModel.from_pretrained(model_name),
+                peft_config=LoraConfig(
+                    task_type=TaskType.TOKEN_CLS,
+                    inference_mode=inference_mode,
+                    r=peft_config['lora_r'],
+                    lora_alpha=peft_config['lora_alpha'],
+                    lora_dropout=peft_config['lora_dropout'],
+                    use_dora=peft_config['use_dora']
+                )
             )
-        )
+        else:
+            self.base_model = AutoModel.from_pretrained(model_name)
         # Last layer
         self.projection_layer = nn.Linear(self.base_model.base_model.config.hidden_size, projection_dim)
 

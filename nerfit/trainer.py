@@ -36,9 +36,8 @@ class TrainerConfig:
             ]
         ],
         ent2emb: Dict[str, torch.Tensor],
-        lora_r: int = 16,
-        lora_alpha: int = 32,
-        lora_dropout: float = 0.1,
+        peft_lora:bool=False,
+        peft_config:Optional[Dict[str:Union[int,float,bool]]]=None, # {'lora_r':8,'lora_alpha':32,'lora_dropout':0.1, 'use_dora': True}
         inference_mode: bool = False,
         num_steps: int = 1000,
         callback_steps: int = 100,
@@ -57,9 +56,8 @@ class TrainerConfig:
             val_annotations (torch.utils.data.Dataset): Validation dataset.
             ent2emb (Dict[str, torch.Tensor]): Entity to embedding lookup dictionary.
             projection_dim (int): Dimension of the projection layer output.
-            lora_r (int, optional): LoRA rank parameter. Defaults to 16.
-            lora_alpha (int, optional): LoRA alpha parameter. Defaults to 32.
-            lora_dropout (float, optional): Dropout rate for LoRA. Defaults to 0.1.
+            peft_lora (bool, optional): Whether to use LoRA rank parameter. Defaults to False.
+            peft_config (int, optional): LoRA configuration. Defaults to None.
             inference_mode (bool, optional): If True, sets model to inference mode. Defaults to False.
             num_steps (int, optional): Number of training steps. Defaults to 1000.
             callback_steps (int, optional): Number of steps between each callback. Defaults to 100.
@@ -75,9 +73,8 @@ class TrainerConfig:
         self.train_annotations = train_annotations
         self.val_annotations = val_annotations
         self.ent2emb = ent2emb
-        self.lora_r = lora_r
-        self.lora_alpha = lora_alpha
-        self.lora_dropout = lora_dropout
+        self.peft_lora = peft_lora
+        self.peft_config = peft_config
         self.inference_mode = inference_mode
         self.num_steps = num_steps
         self.callback_steps = callback_steps
@@ -103,7 +100,7 @@ class Trainer:
         self.train_annotations = config.train_annotations
         self.val_annotations = config.val_annotations
         self.ent2emb = self._prepare_embeddings(config.ent2emb)
-        self.model = self._prepare_model()
+        self.model = self._prepare_model(self.config.peft_lora, self.config.peft_config)
         self.accelerator = Accelerator()
         self.optimizer = self._configure_optimizer()
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.config.num_steps)
@@ -200,7 +197,7 @@ class Trainer:
         # Load the tokenizer using the model name from the configuration
         return AutoTokenizer.from_pretrained(self.config.model_name)
 
-    def _prepare_model(self) -> torch.nn.Module:
+    def _prepare_model(self, peft_lora:bool, peft_config:Optional[Dict[str,Union[int,float,bool]]]=None) -> torch.nn.Module:
         """
         Prepares the nerfitModel based on the provided configuration.
 
@@ -209,17 +206,15 @@ class Trainer:
         """
         model_name = self.config.model_name
         projection_dim = next(iter(self.ent2emb.values())).shape[-1]
-        lora_r = self.config.lora_r
-        lora_alpha = self.config.lora_alpha
-        lora_dropout = self.config.lora_dropout
+        peft_lora = self.config.peft_lora
+        peft_config = self.config.peft_config
         inference_mode = self.config.inference_mode
 
         model = nerfitModel(
             model_name=model_name,
             projection_dim=projection_dim,
-            lora_r=lora_r,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
+            peft_lora=peft_lora,
+            peft_config=peft_config,
             inference_mode=inference_mode
         )
 
@@ -248,7 +243,6 @@ class Trainer:
 
         for step in range(self.config.num_steps):
             batch = next(train_iter)
-            print(batch)
             loss = self._training_step(batch)
             self.optimizer.step()
             self.scheduler.step()
