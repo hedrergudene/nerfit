@@ -56,6 +56,6 @@ class nerfitDataset(Dataset):
         return {
             'input_ids': input_ids,                                                         # Shape (num_tokens)
             'attention_mask': attention_mask,                                               # Shape (num_tokens)
-            'embedding': torch.cat(embeddings, dim=0) if embeddings else torch.tensor([]), # Shape (num_entities, embed_dim)
-            'label': torch.cat(labels, dim=0) if labels else torch.tensor([])              # Shape (num_entities, num_tokens)
+            'embeddings': torch.cat(embeddings, dim=0) if embeddings else torch.tensor([]), # Shape (num_entities, embed_dim)
+            'labels': torch.cat(labels, dim=0) if labels else torch.tensor([])              # Shape (num_entities, num_tokens)
         }

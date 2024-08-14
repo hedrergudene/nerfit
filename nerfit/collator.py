@@ -13,8 +13,8 @@ class nerfitDataCollator:
         # Extract the individual components from the batch
         input_ids_batch = [item['input_ids'] for item in batch]
         attention_mask_batch = [item['attention_mask'] for item in batch]
-        labels_batch = [item['label'] for item in batch]
-        embeddings_batch = [item['embedding'] for item in batch]
+        labels_batch = [item['labels'] for item in batch]
+        embeddings_batch = [item['embeddings'] for item in batch]
 
         # Pad input_ids and attention_mask
         input_ids_padded = self._pad_sequence(input_ids_batch, self.pad_token_id)
@@ -41,8 +41,8 @@ class nerfitDataCollator:
         return {
             'input_ids': input_ids_padded,               # Shape (batch_size, max_num_tokens)
             'attention_mask': attention_mask_padded,     # Shape (batch_size, max_num_tokens)
-            'label': labels_padded,                     # Shape (batch_size, max_num_entities, max_num_tokens)
-            'embedding': embeddings_padded              # Shape (batch_size, max_num_entities, projection_dim)
+            'labels': labels_padded,                     # Shape (batch_size, max_num_entities, max_num_tokens)
+            'embeddings': embeddings_padded              # Shape (batch_size, max_num_entities, projection_dim)
         }
 
     def _pad_sequence(self, sequences, pad_value):

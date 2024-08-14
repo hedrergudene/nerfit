@@ -8,10 +8,10 @@ from itertools import cycle
 import json
 import os
 from typing import Optional, List, Callable, Dict, Any, Union
-from .dataset import nerfitDataset
-from .collator import nerfitDataCollator
-from .model import nerfitModel
-from .utils import build_lookup_table, build_lookup_table_from_string
+from nerfit.dataset import nerfitDataset
+from nerfit.collator import nerfitDataCollator
+from nerfit.model import nerfitModel
+from nerfit.utils import build_lookup_table, build_lookup_table_from_string
 
 
 # Configuration
@@ -191,7 +191,7 @@ class Trainer:
 
     def _prepare_tokenizer(self) -> AutoTokenizer:
         """
-        Prepares the tokenizer for the training process.    
+        Prepares the tokenizer for the training process.
 
         This method loads the tokenizer based on the model name provided in the configuration.
         The tokenizer is essential for encoding text data into input IDs and attention masks
@@ -203,7 +203,7 @@ class Trainer:
     def _prepare_model(self) -> torch.nn.Module:
         """
         Prepares the nerfitModel based on the provided configuration.
-    
+
         Returns:
             torch.nn.Module: The prepared model.
         """
@@ -213,7 +213,7 @@ class Trainer:
         lora_alpha = self.config.lora_alpha
         lora_dropout = self.config.lora_dropout
         inference_mode = self.config.inference_mode
-    
+
         model = nerfitModel(
             model_name=model_name,
             projection_dim=projection_dim,
@@ -222,7 +222,7 @@ class Trainer:
             lora_dropout=lora_dropout,
             inference_mode=inference_mode
         )
-    
+
         return model
 
     def _configure_optimizer(self) -> torch.optim.Optimizer:
@@ -248,6 +248,7 @@ class Trainer:
 
         for step in range(self.config.num_steps):
             batch = next(train_iter)
+            print(batch)
             loss = self._training_step(batch)
             self.optimizer.step()
             self.scheduler.step()
@@ -276,9 +277,11 @@ class Trainer:
             torch.Tensor: The computed loss.
         """
         self.optimizer.zero_grad()
-        labels = batch.pop('label')
-        embeddings = batch.pop('embedding')
-        output = self.model(**batch)
+        input_ids = batch.pop('input_ids')
+        attention_mask = batch.pop('attention_mask')
+        labels = batch.pop('labels')
+        embeddings = batch.pop('embeddings')
+        output = self.model(input_ids = input_ids, attention_mask = attention_mask)
         mask = (labels != -100)
         labels[~mask] = 0
 
@@ -305,9 +308,11 @@ class Trainer:
         val_loss = 0
         with torch.no_grad():
             for batch in self.val_dataloader:
-                labels = batch.pop('label')
-                embeddings = batch.pop('embedding')
-                output = self.model(**batch)
+                input_ids = batch.pop('input_ids')
+                attention_mask = batch.pop('attention_mask')
+                labels = batch.pop('labels')
+                embeddings = batch.pop('embeddings')
+                output = self.model(input_ids = input_ids, attention_mask = attention_mask)
                 mask = (labels != -100)
                 labels[~mask] = 0
 
