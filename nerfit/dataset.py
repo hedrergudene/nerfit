@@ -26,33 +26,6 @@ class nerfitDataset(Dataset):
         annot = self.annotations[idx]
         return self._collate_pretraining(annot)
 
-    def _parse_annotation(self, annotation: str):
-        pattern = re.compile(r'\[(.*?)\]\((.*?): (.*?)\)')
-        matches = pattern.finditer(annotation)
-
-        text = annotation
-        entities = []
-        offset = 0
-
-        for m in matches:
-            entity = m.group(1).strip()
-            start_idx = m.start() - offset
-            end_idx = start_idx + len(entity)
-
-            entities.append([start_idx, end_idx, entity])
-
-            # Replace the annotated part with the entity name in the text
-            annotated_text = m.group(0)
-            text = text[:m.start()-offset] + entity + text[m.end()-offset:]
-
-            # Update the offset to account for the removed annotation
-            offset += len(annotated_text) - len(entity)
-
-        return {
-            "text": text,
-            "entities": entities
-        }
-
     def _collate_pretraining(self, annot):
         # Tokenize
         tokens = self.tokenizer.encode_plus(

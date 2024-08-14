@@ -3,7 +3,6 @@ import os
 import logging as log
 import sys
 from typing import List, Dict
-from transformers import AutoModelForMaskedLM, AutoModelForTokenClassification
 from sentence_transformers import SentenceTransformer
 import torch
 from litellm import completion
@@ -29,7 +28,7 @@ def build_lookup_table(
 
     # Check env variable has been set
     if not os.getenv("OPENAI_API_KEY"):
-        raise ValueError(f"Environment variable 'OPENAI_API_KEY' must be set.")
+        raise ValueError(f"Environment variable 'OPENAI_API_KEY' must be set to compute `ent2emb` from scratch.")
 
     # Build label-samples mapping
     ent2samples = {}
@@ -77,19 +76,3 @@ def build_lookup_table_from_string(
     del st_model
     # Output
     return output
-
-
-# Helper method to save weights of NER models without last linear layer
-def save_updated_fill_mask_model(model:AutoModelForTokenClassification, save_directory:str):
-
-    # Extract the base model (original fill-mask model)
-    base_model = getattr(model, model.base_model_prefix)  # Generic way to access the base model
-
-    # Load the corresponding masked language model (fill-mask model)
-    fill_mask_model = AutoModelForMaskedLM.from_pretrained(model)
-
-    # Replace the base model with the updated one
-    setattr(fill_mask_model, fill_mask_model.base_model_prefix, base_model)
-
-    # Save the updated fill-mask model
-    fill_mask_model.save_pretrained(save_directory)

@@ -25,7 +25,7 @@ The system is designed to identify and label entities in text using a contrastiv
 
 The `Trainer` object is responsible for managing the entire training pipeline, from data preparation to model optimization and evaluation. It encapsulates all the necessary components, including the model, tokenizer, data loaders, optimizer, and training loop. The `Trainer` is configured via the `TrainerConfig` class, which allows you to specify various parameters such as learning rates, batch size, and more.
 
-However, given the rich variety of NER dataset formats available, it's not possible to rule them all. Instead, you have to prepare a small block of code to convert your annotations into the following schema, and encapsulate it into the `parse_annotation` static method within the `Trainer`:
+However, given the rich variety of NER dataset formats available, it's not possible to rule them all. Instead, you have to prepare a small block of code to convert your annotations into the following schema, and encapsulate it into the `_parse_annotation` static method within the `Trainer`:
 
 ```
 {
@@ -47,12 +47,17 @@ Annotations have this structure:
 [ORG: OpenAI] is based in [LOC: San Francisco].
 ```
 
-Therefore, `parse_annotation` method should be like:
+Therefore, `_parse_annotation` method should be like:
 
 ```python
+# Libraries
+import re
+from typing import List, Union, Dict
+from nerfit import Trainer
+
+# Child class
 class CustomTrainer(Trainer):
-    @staticmethod
-    def parse_annotation(
+    def _parse_annotation(
         annotations:List[
             Union[
                 Dict[str,str],
@@ -71,13 +76,13 @@ class CustomTrainer(Trainer):
             offset = 0
             for m in matches:
                 entity = m.group(2).strip()
-                label = m.group(1)
+                label = m.group(1).strip()
                 start_idx = m.start() - offset
                 end_idx = start_idx + len(entity)
                 entities.append([start_idx, end_idx, label])
                 # Replace the annotated part with the entity name in the text
                 annotated_text = m.group(0)
-                text = text[:m.start()-offset] + entity + text[m.end()-offset:]
+                text = text[:m.start()-offset] + entity + text[m.end()  -offset:]
                 # Update the offset to account for the removed annotation
                 offset += len(annotated_text) - len(entity)
             output.append({"text": text,"entities": entities})

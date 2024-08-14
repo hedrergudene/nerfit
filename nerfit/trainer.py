@@ -7,6 +7,7 @@ from accelerate import Accelerator
 from itertools import cycle
 import json
 import os
+import re
 from typing import Optional, List, Callable, Dict, Any, Union
 from .dataset import nerfitDataset
 from .collator import nerfitDataCollator
@@ -112,7 +113,7 @@ class Trainer:
         self.early_stopping_counter = 0
 
     @staticmethod
-    def parse_annotation(
+    def _parse_annotation(
         annotations:List[
             Union[
                 Dict[str,str],
@@ -126,7 +127,7 @@ class Trainer:
 
     def _prepare_embeddings(self, ent2emb:Optional[Dict[str, Union[torch.Tensor, str]]]) -> torch.Tensor:
         if ent2emb is None:
-            return build_lookup_table(self.parse_annotation(self.train_annotations))
+            return build_lookup_table(self._parse_annotation(self.train_annotations))
         elif all([isinstance(v,str) for _,v in ent2emb.items()]):
             return build_lookup_table_from_string(ent2emb)
         elif all([isinstance(v,torch.Tensor) for _,v in ent2emb.items()]):
@@ -142,12 +143,12 @@ class Trainer:
             tuple: A tuple containing the training and validation Dataset objects.
         """
         train_dataset = nerfitDataset(
-            self.parse_annotation(self.train_annotations),
+            self._parse_annotation(self.train_annotations),
             self.ent2emb,
             self.tokenizer
         )
         val_dataset = nerfitDataset(
-            self.parse_annotation(self.val_annotations),
+            self._parse_annotation(self.val_annotations),
             self.ent2emb,
             self.tokenizer
         )
@@ -198,10 +199,7 @@ class Trainer:
         that the model can process.
         """
         # Load the tokenizer using the model name from the configuration
-        tokenizer = AutoTokenizer.from_pretrained(self.config.model_name)   
-
-        # Return the prepared tokenizer
-        return tokenizer
+        return AutoTokenizer.from_pretrained(self.config.model_name)
 
     def _prepare_model(self) -> torch.nn.Module:
         """
