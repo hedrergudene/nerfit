@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
 from accelerate import Accelerator
 from itertools import cycle
+from tqdm.auto import tqdm
 import json
 import os
 from typing import Optional, List, Callable, Dict, Any, Union
@@ -240,17 +241,24 @@ class Trainer:
         self.model.train()
         train_iter = cycle(self.train_dataloader)
         loss_values = []
+        val_loss = None  # Initialize validation loss as None
 
-        for step in range(self.config.num_steps):
+        # Initialize the progress bar
+        progress_bar = tqdm(range(self.config.num_steps), desc="Training", unit="step")
+
+        for step in progress_bar:
             batch = next(train_iter)
             loss = self._training_step(batch)
             self.optimizer.step()
             self.scheduler.step()
             loss_values.append(loss.item())
 
+            # Update the progress bar with the current training loss
+            progress_bar.set_postfix({"train_loss": loss.item(), "val_loss": val_loss if val_loss is not None else "N/A"})
+
             if (step + 1) % self.config.callback_steps == 0:
                 self._log_training_metrics(loss_values, step)
-                self._evaluate(step)
+                val_loss = self._evaluate(step)  # Update the validation loss
 
             if (step + 1) % self.config.save_steps == 0:
                 self.save_model(step)
@@ -259,6 +267,9 @@ class Trainer:
                 if self._early_stopping():
                     print(f"Early stopping at step {step + 1} due to no improvement in validation loss.")
                     break
+
+        # Close the progress bar after training completes
+        progress_bar.close()
 
     def _training_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
@@ -297,6 +308,9 @@ class Trainer:
 
         Args:
             step (int): The current training step.
+            
+        Returns:
+            float: The computed validation loss.
         """
         self.model.eval()
         val_loss = 0
@@ -325,6 +339,8 @@ class Trainer:
         print(f"Validation Loss at step {step + 1}: {val_loss:.4f}")
         self.model.train()
         self._early_stopping_update(val_loss)
+
+        return val_loss  # Return the validation loss for updating the progress bar
 
     def save_model(self, step: int):
         """
