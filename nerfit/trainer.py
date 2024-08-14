@@ -250,8 +250,7 @@ class Trainer:
         loss_values = []
         history = {}
         val_loss = None  # Initialize validation loss as None
-        best_val_loss = float('inf')
-        early_stopping_counter = 0
+        self._reset_params() # Initialize training params
 
         # Initialize the progress bar
         progress_bar = tqdm(range(self.config.num_steps), desc="Training", unit="step")
@@ -267,36 +266,23 @@ class Trainer:
             # Update the progress bar with the current training loss
             progress_bar.set_postfix({"train_loss": loss.item(), "val_loss": val_loss if val_loss is not None else "N/A"})
 
-            #
             # Evaluation
-            #
             if (step + 1) % self.config.eval_steps == 0:
                 val_loss = self._evaluate(step)  # Update the validation loss
-            
-                #
-                # Callbacks
-                #
-                # Save best ckpt
-                if val_loss < best_val_loss == 0:
-                    best_val_loss = val_loss
-                    self.save_model()
-                    early_stopping_counter = 0
-                else:
-                    early_stopping_counter += 1
-                # Early stopping
-                if self.config.patience is not None:
-                    if early_stopping_counter >= self.config.patience:
-                        print(f"Early stopping at step {step + 1} due to no improvement in validation loss.")
-                        break
                 # Update the table below the progress bar
                 self._print_metrics_table(step + 1, loss_values[-1], val_loss, console)
                 # Create record
-                history[step] = {
+                history[step+1] = {
                 "Train Loss": loss_values[-1],
                 "Val Loss": val_loss,
                 "Body LR": self.optimizer.param_groups[0]['lr'],
                 "Head LR": self.optimizer.param_groups[1]['lr']
             }
+            
+            # Early stopping
+            if self.config.patience is not None:
+                if self.early_stopping_counter >= self.config.patience:
+                    print(f"Early stopping at step {step + 1} due to no improvement in validation loss.")
 
         # Close the progress bar after training completes
         progress_bar.close()
@@ -329,7 +315,7 @@ class Trainer:
         self.accelerator.backward(loss)
         return loss
 
-    def _evaluate(self, step: int):
+    def _evaluate(self):
         """
         Evaluates the model on the validation set and logs the validation loss.
 
@@ -358,10 +344,23 @@ class Trainer:
                 val_loss += loss.item()
 
         val_loss /= len(self.val_dataloader)
-        print(f"Validation Loss at step {step + 1}: {val_loss:.4f}")
+
+        # Save best ckpt
+        if val_loss < self.best_val_loss == 0:
+            self.best_val_loss = val_loss
+            self.save_model()
+            self.early_stopping_counter = 0
+        else:
+            self.early_stopping_counter += 1
+
         self.model.train()
 
-        return val_loss  # Return the validation loss for updating the progress bar
+        return val_loss
+
+    def _reset_params(self) -> None:
+        self.show_header = True
+        self.best_val_loss = float('inf')
+        self.early_stopping_counter = 0
 
     def _print_metrics_table(
             self,
@@ -369,7 +368,7 @@ class Trainer:
             train_loss: float,
             val_loss: float,
             console: Console
-    ):
+    ) -> None:
         """
         Prints a table with the current training and validation metrics.
 
@@ -379,8 +378,7 @@ class Trainer:
             val_loss (float): The current validation loss.
             console (Console): The Rich console object for printing.
         """
-        console.clear()  # Clear the console to replace the table
-        table = Table(show_header=True, header_style="bold magenta")
+        table = Table(show_header=self.show_header, header_style="bold magenta")
         table.add_column("Step", justify="right")
         table.add_column("Train Loss", justify="right")
         table.add_column("Val Loss", justify="right")
@@ -390,11 +388,17 @@ class Trainer:
         # Add rows with current metrics
         table.add_row(
             str(step),
-            f"{train_loss:.4f}",
-            f"{val_loss:.4f}" if val_loss is not None else "N/A",
-            f"{self.optimizer.param_groups[0]['lr']:.4f}",
-            f"{self.optimizer.param_groups[1]['lr']:.4f}"
+            f"{train_loss:.6f}",
+            f"{val_loss:.6f}" if val_loss is not None else "N/A",
+            f"{self.optimizer.param_groups[0]['lr']:.6f}",
+            f"{self.optimizer.param_groups[1]['lr']:.6f}"
         )
+
+        # Set show_header to False for subsequent calls
+        self.show_header = False
+
+        # Clear the table only
+        table.clear()
 
         # Display the table below the progress bar
         console.print(table)
