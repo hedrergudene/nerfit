@@ -344,7 +344,7 @@ class Trainer:
         with torch.no_grad():
             for batch in self.val_dataloader:
                 output = self.model(input_ids = batch['input_ids'], attention_mask = batch['attention_mask'])
-                mask = (labels != -100)
+                mask = (batch['labels'] != -100)
 
                 if batch['embeddings'].size(1) > 0:
                     logits = torch.bmm(batch['embeddings'], output.transpose(1, 2))
