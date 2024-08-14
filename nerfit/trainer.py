@@ -276,8 +276,8 @@ class Trainer:
             torch.Tensor: The computed loss.
         """
         self.optimizer.zero_grad()
-        labels = batch.pop('labels')
-        embeddings = batch.pop('embeddings')
+        labels = batch.pop('label')
+        embeddings = batch.pop('embedding')
         output = self.model(**batch)
         mask = (labels != -100)
         labels[~mask] = 0
@@ -305,8 +305,8 @@ class Trainer:
         val_loss = 0
         with torch.no_grad():
             for batch in self.val_dataloader:
-                labels = batch.pop('labels')
-                embeddings = batch.pop('embeddings')
+                labels = batch.pop('label')
+                embeddings = batch.pop('embedding')
                 output = self.model(**batch)
                 mask = (labels != -100)
                 labels[~mask] = 0

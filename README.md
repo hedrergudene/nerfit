@@ -1,4 +1,4 @@
-# nerFit: Few-shot entity recognition representation learning
+# nerFit: Few-shot entity representation learning
 
 ## Table of Contents
 
