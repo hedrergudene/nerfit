@@ -66,7 +66,7 @@ class CustomTrainer(Trainer):
                 str
             ]
         ]
-    ) -> List[Dict[str,Union[str]]]:
+    ) -> List[Dict[str,Union[str,int]]]:
         output = []
         for annotation in annotations:
             pattern = re.compile(r'\[(.*?): (.*?)\]')

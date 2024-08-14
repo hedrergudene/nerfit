@@ -7,7 +7,6 @@ from accelerate import Accelerator
 from itertools import cycle
 import json
 import os
-import re
 from typing import Optional, List, Callable, Dict, Any, Union
 from .dataset import nerfitDataset
 from .collator import nerfitDataCollator
@@ -100,11 +99,11 @@ class Trainer:
             config (TrainerConfig): Configuration object containing all necessary training parameters.
         """
         self.config = config
-        self.model = self._prepare_model()
         self.tokenizer = self._prepare_tokenizer()
         self.train_annotations = config.train_annotations
         self.val_annotations = config.val_annotations
         self.ent2emb = self._prepare_embeddings(config.ent2emb)
+        self.model = self._prepare_model()
         self.accelerator = Accelerator()
         self.optimizer = self._configure_optimizer()
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.config.num_steps)
