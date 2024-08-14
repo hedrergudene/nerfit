@@ -338,7 +338,7 @@ class Trainer:
             os.makedirs(output_dir)
         self.accelerator.wait_for_everyone()
         unwrapped_model = self.accelerator.unwrap_model(self.model)
-        unwrapped_model.save_pretrained(output_dir)
+        unwrapped_model.base_model.save_pretrained(output_dir)
         self.tokenizer.save_pretrained(output_dir)
         print(f"Model saved at {output_dir}")
 
