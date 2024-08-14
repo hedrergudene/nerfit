@@ -15,6 +15,7 @@ setup(
         "sentence_transformers==3.0.1",
         "litellm==1.43.7",
         "safetensors==0.4.4",
+        "rich==13.7.1",
         "fire==0.6.0"
     ],
     extras_require={

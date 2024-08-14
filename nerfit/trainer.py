@@ -5,6 +5,8 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
 from accelerate import Accelerator
 from itertools import cycle
+from rich.table import Table
+from rich.console import Console
 from tqdm.auto import tqdm
 import json
 import os
@@ -40,15 +42,17 @@ class TrainerConfig:
         peft_lora:bool=False,
         peft_config:Optional[Dict[str,Union[int,float,bool]]]=None, # {'lora_r':8,'lora_alpha':32,'lora_dropout':0.1, 'use_dora': True}
         inference_mode: bool = False,
+        dataloader_num_workers: int = 4,
         num_steps: int = 1000,
-        callback_steps: int = 100,
-        save_steps: int = 100,
+        eval_steps: int = 100,
         batch_size: int = 32,
         backbone_lr: float = 2e-5,
         projection_lr: float = 1e-4,
+        weight_decay: float = 1e-2,
         output_dir: str = './model',
         metrics_output_path: str = './metrics.json',
-        patience: Optional[int] = None
+        patience: Optional[int] = None,
+        logging_steps: int = 100  # New parameter for logging frequency
     ):
         """
         Args:
@@ -56,16 +60,17 @@ class TrainerConfig:
             train_annotations (torch.utils.data.Dataset): Training dataset.
             val_annotations (torch.utils.data.Dataset): Validation dataset.
             ent2emb (Dict[str, torch.Tensor]): Entity to embedding lookup dictionary.
-            projection_dim (int): Dimension of the projection layer output.
             peft_lora (bool, optional): Whether to use LoRA rank parameter. Defaults to False.
             peft_config (int, optional): LoRA configuration. Defaults to None.
             inference_mode (bool, optional): If True, sets model to inference mode. Defaults to False.
+            dataloader_num_workers (int, optional): CPU parallelisation when loading data. Defaults to 4.
             num_steps (int, optional): Number of training steps. Defaults to 1000.
-            callback_steps (int, optional): Number of steps between each callback. Defaults to 100.
-            save_steps (int, optional): Number of steps between each model checkpoint save. Defaults to 100.
+            eval_steps (int, optional): Number of steps between each evaluation-callback. Defaults to 100.
+            logging_steps (int, optional): Number of steps between logging metrics. Defaults to 100.
             batch_size (int, optional): Batch size for training. Defaults to 32.
             backbone_lr (float, optional): Learning rate for the backbone model. Defaults to 2e-5.
             projection_lr (float, optional): Learning rate for the projection layer. Defaults to 1e-4.
+            weight_decay (float, optional): Weight decay for both optimisers. Defaults to 1e-2.
             output_dir (str, optional): Directory to save model checkpoints. Defaults to './model'.
             metrics_output_path (str, optional): File path to save training metrics. Defaults to './metrics.json'.
             patience (Optional[int], optional): Number of steps to wait for improvement before stopping. Defaults to None.
@@ -77,15 +82,17 @@ class TrainerConfig:
         self.peft_lora = peft_lora
         self.peft_config = peft_config
         self.inference_mode = inference_mode
+        self.dataloader_num_workers = dataloader_num_workers
         self.num_steps = num_steps
-        self.callback_steps = callback_steps
-        self.save_steps = save_steps
+        self.eval_steps = eval_steps
         self.batch_size = batch_size
         self.backbone_lr = backbone_lr
         self.projection_lr = projection_lr
+        self.weight_decay = weight_decay
         self.output_dir = output_dir
         self.metrics_output_path = metrics_output_path
         self.patience = patience
+        self.logging_steps = logging_steps
 
 
 
@@ -106,8 +113,6 @@ class Trainer:
         self.optimizer = self._configure_optimizer()
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.config.num_steps)
         self.train_dataloader, self.val_dataloader = self._prepare_dataloader()
-        self.best_val_loss = float('inf')
-        self.early_stopping_counter = 0
 
     @staticmethod
     def _parse_annotation(
@@ -175,12 +180,14 @@ class Trainer:
         train_dataloader = DataLoader(
             train_dataset,
             batch_size=self.config.batch_size,
+            num_workers=self.config.dataloader_num_workers,
             shuffle=True,
             collate_fn=self._data_collator()
         )
         val_dataloader = DataLoader(
             val_dataset,
             batch_size=self.config.batch_size * 2,
+            num_workers=self.config.dataloader_num_workers,
             shuffle=False,
             collate_fn=self._data_collator()
         )
@@ -228,9 +235,9 @@ class Trainer:
         Returns:
             torch.optim.Optimizer: The configured optimizer.
         """
-        return torch.optim.Adam([
-            {'params': self.model.base_model.parameters(), 'lr': self.config.backbone_lr},
-            {'params': self.model.projection_layer.parameters(), 'lr': self.config.projection_lr}
+        return torch.optim.AdamW([
+            {'params': self.model.base_model.parameters(), 'lr': self.config.backbone_lr, 'weight_decay': self.config.weight_decay},
+            {'params': self.model.projection_layer.parameters(), 'lr': self.config.projection_lr, 'weight_decay': self.config.weight_decay}
         ])
 
     def fit(self):
@@ -242,6 +249,8 @@ class Trainer:
         train_iter = cycle(self.train_dataloader)
         loss_values = []
         val_loss = None  # Initialize validation loss as None
+        best_val_loss = float('inf')
+        early_stopping_counter = 0
 
         # Initialize the progress bar
         progress_bar = tqdm(range(self.config.num_steps), desc="Training", unit="step")
@@ -255,18 +264,32 @@ class Trainer:
 
             # Update the progress bar with the current training loss
             progress_bar.set_postfix({"train_loss": loss.item(), "val_loss": val_loss if val_loss is not None else "N/A"})
+            console = Console()
 
-            if (step + 1) % self.config.callback_steps == 0:
+            #
+            # Evaluation
+            #
+            if (step + 1) % self.config.eval_steps == 0:
                 self._log_training_metrics(loss_values, step)
                 val_loss = self._evaluate(step)  # Update the validation loss
-
-            if (step + 1) % self.config.save_steps == 0:
-                self.save_model(step)
-
-            if self.config.patience is not None:
-                if self._early_stopping():
-                    print(f"Early stopping at step {step + 1} due to no improvement in validation loss.")
-                    break
+            
+                #
+                # Callbacks
+                #
+                # Save best ckpt
+                if val_loss < best_val_loss == 0:
+                    best_val_loss = val_loss
+                    self.save_model()
+                    early_stopping_counter = 0
+                else:
+                    early_stopping_counter += 1
+                # Early stopping
+                if self.config.patience is not None:
+                    if early_stopping_counter >= self.config.patience:
+                        print(f"Early stopping at step {step + 1} due to no improvement in validation loss.")
+                        break
+                # Update the table below the progress bar
+                self._print_metrics_table(step + 1, loss_values[-1], val_loss, console)
 
         # Close the progress bar after training completes
         progress_bar.close()
@@ -282,18 +305,14 @@ class Trainer:
             torch.Tensor: The computed loss.
         """
         self.optimizer.zero_grad()
-        input_ids = batch.pop('input_ids')
-        attention_mask = batch.pop('attention_mask')
-        labels = batch.pop('labels')
-        embeddings = batch.pop('embeddings')
-        output = self.model(input_ids = input_ids, attention_mask = attention_mask)
+        output = self.model(input_ids = batch['input_ids'], attention_mask = batch['attention_mask'])
         mask = (labels != -100)
         labels[~mask] = 0
 
-        if embeddings.size(1) > 0:
-            logits = torch.bmm(embeddings, output.transpose(1, 2))
+        if batch['embeddings'].size(1) > 0:
+            logits = torch.bmm(batch['embeddings'], output.transpose(1, 2))
             logits = logits * mask
-            labels = labels * mask
+            labels = batch['labels'] * mask
             loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
             loss = loss / mask.sum()
         else:
@@ -316,18 +335,14 @@ class Trainer:
         val_loss = 0
         with torch.no_grad():
             for batch in self.val_dataloader:
-                input_ids = batch.pop('input_ids')
-                attention_mask = batch.pop('attention_mask')
-                labels = batch.pop('labels')
-                embeddings = batch.pop('embeddings')
-                output = self.model(input_ids = input_ids, attention_mask = attention_mask)
+                output = self.model(input_ids = batch['input_ids'], attention_mask = batch['attention_mask'])
                 mask = (labels != -100)
                 labels[~mask] = 0
 
-                if embeddings.size(1) > 0:
-                    logits = torch.bmm(embeddings, output.transpose(1, 2))
+                if batch['embeddings'].size(1) > 0:
+                    logits = torch.bmm(batch['embeddings'], output.transpose(1, 2))
                     logits = logits * mask
-                    labels = labels * mask
+                    labels = batch['labels'] * mask
                     loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
                     loss = loss / mask.sum()
                 else:
@@ -338,25 +353,59 @@ class Trainer:
         val_loss /= len(self.val_dataloader)
         print(f"Validation Loss at step {step + 1}: {val_loss:.4f}")
         self.model.train()
-        self._early_stopping_update(val_loss)
 
         return val_loss  # Return the validation loss for updating the progress bar
 
-    def save_model(self, step: int):
+    def _print_metrics_table(self, step: int, train_loss: float, val_loss: float, console: Console):
         """
-        Saves the model checkpoint.
+        Prints a table with the current training and validation metrics.
+
+        Args:
+            step (int): The current training step.
+            train_loss (float): The current training loss.
+            val_loss (float): The current validation loss.
+            console (Console): The Rich console object for printing.
+        """
+        console.clear()  # Clear the console to replace the table
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Step", justify="right")
+        table.add_column("Train Loss", justify="right")
+        table.add_column("Val Loss", justify="right")
+
+        # Add rows with current metrics
+        table.add_row(str(step), f"{train_loss:.4f}", f"{val_loss:.4f}" if val_loss is not None else "N/A")
+
+        # Display the table below the progress bar
+        console.print(table)
+
+    def save_model(self):
+        """
+        Saves the model checkpoint, removing any previous checkpoint if it exists.
 
         Args:
             step (int): The current training step.
         """
-        output_dir = os.path.join(self.config.output_dir, f"checkpoint-{step + 1}")
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        # Define the output directory for saving the model
+        output_dir = os.path.join(self.config.output_dir, "best_checkpoint")
+
+        # Remove previous checkpoint if it exists
+        if os.path.exists(output_dir):
+            for file in os.listdir(output_dir):
+                file_path = os.path.join(output_dir, file)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                elif os.path.isdir(file_path):
+                    os.rmdir(file_path)
+            os.rmdir(output_dir)
+
+        # Create the directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Save the model and tokenizer
         self.accelerator.wait_for_everyone()
         unwrapped_model = self.accelerator.unwrap_model(self.model)
         unwrapped_model.base_model.save_pretrained(output_dir)
         self.tokenizer.save_pretrained(output_dir)
-        print(f"Model saved at {output_dir}")
 
     def _log_training_metrics(self, loss_values: List[float], step: int):
         """
@@ -366,7 +415,7 @@ class Trainer:
             loss_values (List[float]): List of loss values for the current callback interval.
             step (int): The current training step.
         """
-        avg_train_loss = sum(loss_values[-self.config.callback_steps:]) / self.config.callback_steps
+        avg_train_loss = sum(loss_values[-self.config.eval_steps:]) / self.config.eval_steps
         lr_body = self.optimizer.param_groups[0]['lr']
         lr_head = self.optimizer.param_groups[1]['lr']
         with open(self.config.metrics_output_path, 'a') as f:
@@ -379,27 +428,3 @@ class Trainer:
             f.write('\n')
 
         print(f"Step {step + 1}/{self.config.num_steps} - Train Loss: {avg_train_loss:.4f} - LR Body: {lr_body:.6f} - LR Head: {lr_head:.6f}")
-
-    def _early_stopping_update(self, val_loss: float):
-        """
-        Updates the early stopping counter based on the validation loss.
-
-        Args:
-            val_loss (float): The current validation loss.
-        """
-        if val_loss < self.best_val_loss:
-            self.best_val_loss = val_loss
-            self.early_stopping_counter = 0
-        else:
-            self.early_stopping_counter += 1
-
-    def _early_stopping(self) -> bool:
-        """
-        Checks if early stopping should be triggered.
-
-        Returns:
-            bool: True if early stopping should occur, False otherwise.
-        """
-        if self.config.patience is None:
-            return False
-        return self.early_stopping_counter >= self.config.patience
