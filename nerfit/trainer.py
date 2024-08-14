@@ -397,9 +397,6 @@ class Trainer:
         # Set show_header to False for subsequent calls
         self.show_header = False
 
-        # Clear the table only
-        table.clear()
-
         # Display the table below the progress bar
         console.print(table)
 
