@@ -306,8 +306,7 @@ class Trainer:
         """
         self.optimizer.zero_grad()
         output = self.model(input_ids = batch['input_ids'], attention_mask = batch['attention_mask'])
-        mask = (labels != -100)
-        labels[~mask] = 0
+        mask = (batch['labels'] != -100)
 
         if batch['embeddings'].size(1) > 0:
             logits = torch.bmm(batch['embeddings'], output.transpose(1, 2))
@@ -356,7 +355,13 @@ class Trainer:
 
         return val_loss  # Return the validation loss for updating the progress bar
 
-    def _print_metrics_table(self, step: int, train_loss: float, val_loss: float, console: Console):
+    def _print_metrics_table(
+            self,
+            step: int,
+            train_loss: float,
+            val_loss: float,
+            console: Console
+    ):
         """
         Prints a table with the current training and validation metrics.
 
@@ -371,9 +376,17 @@ class Trainer:
         table.add_column("Step", justify="right")
         table.add_column("Train Loss", justify="right")
         table.add_column("Val Loss", justify="right")
+        table.add_column("Body LR", justify="right")
+        table.add_column("Head LR", justify="right")
 
         # Add rows with current metrics
-        table.add_row(str(step), f"{train_loss:.4f}", f"{val_loss:.4f}" if val_loss is not None else "N/A")
+        table.add_row(
+            str(step),
+            f"{train_loss:.4f}",
+            f"{val_loss:.4f}" if val_loss is not None else "N/A",
+            f"{self.optimizer.param_groups[0]['lr']:.4f}",
+            f"{self.optimizer.param_groups[1]['lr']:.4f}"
+        )
 
         # Display the table below the progress bar
         console.print(table)
