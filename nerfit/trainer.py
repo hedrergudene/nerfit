@@ -268,7 +268,7 @@ class Trainer:
 
             # Evaluation
             if (step + 1) % self.config.eval_steps == 0:
-                val_loss = self._evaluate(step)  # Update the validation loss
+                val_loss = self._evaluate()  # Update the validation loss
                 # Update the table below the progress bar
                 self._print_metrics_table(step + 1, loss_values[-1], val_loss, console)
                 # Create record
