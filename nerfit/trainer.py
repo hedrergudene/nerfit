@@ -276,18 +276,20 @@ class Trainer:
             torch.Tensor: The computed loss.
         """
         self.optimizer.zero_grad()
-        output = self.model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'])
-        mask = (batch['labels'] != -100)
-        batch['labels'][~mask] = 0
+        labels = batch.pop('labels')
+        embeddings = batch.pop('embeddings')
+        output = self.model(**batch)
+        mask = (labels != -100)
+        labels[~mask] = 0
 
-        if batch['embeddings'].size(1) > 0:
-            logits = torch.bmm(batch['embeddings'], output.transpose(1, 2))
+        if embeddings.size(1) > 0:
+            logits = torch.bmm(embeddings, output.transpose(1, 2))
             logits = logits * mask
-            batch['labels'] = batch['labels'] * mask
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, batch['labels'], reduction='sum')
+            labels = labels * mask
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
             loss = loss / mask.sum()
         else:
-            loss = torch.tensor(0.0, device=batch['labels'].device)
+            loss = torch.tensor(0.0, device=labels.device)
 
         self.accelerator.backward(loss)
         return loss
@@ -303,18 +305,20 @@ class Trainer:
         val_loss = 0
         with torch.no_grad():
             for batch in self.val_dataloader:
-                output = self.model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'])
-                mask = (batch['labels'] != -100)
-                batch['labels'][~mask] = 0
+                labels = batch.pop('labels')
+                embeddings = batch.pop('embeddings')
+                output = self.model(**batch)
+                mask = (labels != -100)
+                labels[~mask] = 0
 
-                if batch['embeddings'].size(1) > 0:
-                    logits = torch.bmm(batch['embeddings'], output.transpose(1, 2))
+                if embeddings.size(1) > 0:
+                    logits = torch.bmm(embeddings, output.transpose(1, 2))
                     logits = logits * mask
-                    batch['labels'] = batch['labels'] * mask
-                    loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, batch['labels'], reduction='sum')
+                    labels = labels * mask
+                    loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
                     loss = loss / mask.sum()
                 else:
-                    loss = torch.tensor(0.0, device=batch['labels'].device)
+                    loss = torch.tensor(0.0, device=labels.device)
 
                 val_loss += loss.item()
 

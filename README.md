@@ -57,6 +57,7 @@ from nerfit import Trainer
 
 # Child class
 class CustomTrainer(Trainer):
+    @staticmethod
     def _parse_annotation(
         annotations:List[
             Union[
