@@ -208,7 +208,7 @@ class Trainer:
             torch.nn.Module: The prepared model.
         """
         model_name = self.config.model_name
-        projection_dim = self.ent2emb.values()[0].shape[-1]
+        projection_dim = next(iter(self.ent2emb.values())).shape[-1]
         lora_r = self.config.lora_r
         lora_alpha = self.config.lora_alpha
         lora_dropout = self.config.lora_dropout
