@@ -32,7 +32,7 @@ class nerfitModel(nn.Module):
             )
         )
         # Last layer
-        self.projection_layer = nn.Linear(self.base_model.base_model.config.hidden_dim, projection_dim)
+        self.projection_layer = nn.Linear(self.base_model.base_model.config.hidden_size, projection_dim)
 
     def forward(self, input_ids, attention_mask):
         outputs = self.base_model(input_ids=input_ids, attention_mask=attention_mask)
