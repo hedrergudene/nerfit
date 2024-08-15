@@ -13,36 +13,40 @@ class nerfitDataCollator:
         # Extract the individual components from the batch
         input_ids_batch = [item['input_ids'] for item in batch]
         attention_mask_batch = [item['attention_mask'] for item in batch]
-        labels_batch = [item['labels'] for item in batch]
+        labels_pretraining_batch = [item['labels_pretraining'] for item in batch]
+        labels_ner_batch = [item['labels_ner'] for item in batch]
         embeddings_batch = [item['embeddings'] for item in batch]
 
-        # Pad input_ids and attention_mask
+        # Pad input_ids, attention_mask and NER tags
         input_ids_padded = self._pad_sequence(input_ids_batch, self.pad_token_id)
         attention_mask_padded = self._pad_sequence(attention_mask_batch, 0)
+        labels_ner_padded = self._pad_sequence(labels_ner_batch, -100)
 
         # Determine the maximum number of entities and sequence length in the batch
         max_num_entities = max(emb.size(0) if emb.numel() > 0 else 0 for emb in embeddings_batch)
-        max_labels_len = max(item.size(1) if item.numel() > 0 else 0 for item in labels_batch)
+        max_labels_len = max(item.size(1) if item.numel() > 0 else 0 for item in labels_pretraining_batch)
 
         # Initialize the labels tensor with -100 for padding
-        labels_padded = torch.full((len(batch), max_num_entities, max_labels_len), -100, dtype=torch.float32)
+        labels_pretraining_batch = torch.full((len(batch), max_num_entities, max_labels_len), -100, dtype=torch.float32)
         embeddings_padded = torch.zeros((len(batch), max_num_entities, self.projection_dim), dtype=torch.float32)
 
-        for i, (labels, embeddings) in enumerate(zip(labels_batch, embeddings_batch)):
+        for i, (labels, embeddings) in enumerate(zip(labels_pretraining_batch, embeddings_batch)):
             if labels.numel() > 0:
                 num_entities = labels.size(0)
                 seq_length = labels.size(1)
-                labels_padded[i, :num_entities, :seq_length] = labels
+                labels_pretraining_batch[i, :num_entities, :seq_length] = labels
 
             if embeddings.numel() > 0:
                 num_entities = embeddings.size(0)
                 embeddings_padded[i, :num_entities, :] = embeddings
 
         return {
-            'input_ids': input_ids_padded,               # Shape (batch_size, max_num_tokens)
-            'attention_mask': attention_mask_padded,     # Shape (batch_size, max_num_tokens)
-            'labels': labels_padded,                     # Shape (batch_size, max_num_entities, max_num_tokens)
-            'embeddings': embeddings_padded              # Shape (batch_size, max_num_entities, projection_dim)
+            'input_ids': input_ids_padded,                  # Shape (batch_size, max_num_tokens)
+            'attention_mask': attention_mask_padded,        # Shape (batch_size, max_num_tokens)
+            'embeddings': embeddings_padded,                # Shape (batch_size, max_num_entities, projection_dim)
+            'labels_pretraining': labels_pretraining_batch, # Shape (batch_size, max_num_entities, max_num_tokens)
+            'labels_ner': labels_ner_padded                 # Shape (batch_size, max_num_tokens)
+
         }
 
     def _pad_sequence(self, sequences, pad_value):

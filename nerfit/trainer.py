@@ -295,12 +295,12 @@ class Trainer:
         """
         self.optimizer.zero_grad()
         output = self.model(input_ids = batch['input_ids'], attention_mask = batch['attention_mask'])
-        mask = (batch['labels'] != -100)
+        mask = (batch['labels_pretraining'] != -100)
 
         if batch['embeddings'].size(1) > 0:
             logits = torch.bmm(batch['embeddings'], output.transpose(1, 2))
             logits = logits * mask
-            labels = batch['labels'] * mask
+            labels = batch['labels_pretraining'] * mask
             loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
             loss = loss / mask.sum()
         else:
@@ -324,12 +324,12 @@ class Trainer:
         with torch.no_grad():
             for batch in self.val_dataloader:
                 output = self.model(input_ids = batch['input_ids'], attention_mask = batch['attention_mask'])
-                mask = (batch['labels'] != -100)
+                mask = (batch['labels_pretraining'] != -100)
 
                 if batch['embeddings'].size(1) > 0:
                     logits = torch.bmm(batch['embeddings'], output.transpose(1, 2))
                     logits = logits * mask
-                    labels = batch['labels'] * mask
+                    labels = batch['labels_pretraining'] * mask
                     loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
                     loss = loss / mask.sum()
                 else:
