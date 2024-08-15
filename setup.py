@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="nerfit",
     version="0.1.0",
-    description="nerFit: Few-shot entity recognition representation learning",
+    description="nerFit: Few-shot entity representation learning",
     author="Antonio Zarauz Moreno",
     author_email="hedrergudene@gmail.com",
     url="https://github.com/hedrergudene/nerfit",

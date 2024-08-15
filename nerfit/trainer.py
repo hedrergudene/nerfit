@@ -241,7 +241,13 @@ class Trainer:
             {'params': self.model.projection_layer.parameters(), 'lr': self.config.projection_lr, 'weight_decay': self.config.weight_decay}
         ])
 
-    def fit(self):
+    def train(self):
+        # Pretraining stage
+        self._fit_pretraining()
+        # Prepare NER model
+        self._setup_ner_checkpoint()
+
+    def _fit_pretraining(self) -> None:
         """
         The main training loop that iterates through training steps, logs metrics, evaluates the model, and saves checkpoints.
         """
@@ -310,7 +316,7 @@ class Trainer:
         self.accelerator.backward(loss)
         return loss
 
-    def _evaluate_pretraining(self, step:int):
+    def _evaluate_pretraining(self, step:int) -> float:
         """
         Evaluates the model on the validation set and logs the validation loss.
 
@@ -429,15 +435,13 @@ class Trainer:
         unwrapped_model.base_model.save_pretrained(output_dir)
         self.tokenizer.save_pretrained(output_dir)
 
-    def _setup_ner_checkpoint(self) -> Union[nerfitModel, PeftModel]:
+    def _setup_ner_checkpoint(self) -> Union[AutoModelForTokenClassification, PeftModel]:
         if isinstance(self.model.base_model, PeftModel):
-            model = PeftModel.from_pretrained(
-                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=None),
+            self.model = PeftModel.from_pretrained(
+                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=len(self.train_dataloader.dataset.id2label)),
                 model_id=os.path.join(self.config.output_dir, 'pretraining'),
                 task_type=TaskType.TOKEN_CLS,
                 is_trainable=True
             )
         else:
-            model = AutoModelForTokenClassification.from_pretrained(os.path.join(self.config.output_dir, 'pretraining'), num_labels=None)
-        
-        return model
+            self.model = AutoModelForTokenClassification.from_pretrained(os.path.join(self.config.output_dir, 'pretraining'), num_labels=len(self.train_dataloader.dataset.id2label))
