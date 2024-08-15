@@ -343,7 +343,7 @@ class Trainer:
         self._print_metrics_table(step + 1)
 
         # Save best ckpt
-        if val_loss < self.best_val_loss == 0:
+        if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss
             self.save_model()
             self.early_stopping_counter = 0
@@ -370,29 +370,26 @@ class Trainer:
         Args:
             step (int): The current training step.
         """
-        table = Table(show_header=self.show_header, header_style="bold white")
-        table.add_column("Step", justify="right", style="white")
-        table.add_column("Train Loss", justify="right", style="white")
-        table.add_column("Val Loss", justify="right", style="white")
-        table.add_column("Body LR", justify="right", style="white")
-        table.add_column("Head LR", justify="right", style="white")
-
-        # Add rows with current metrics
-        for k,v in self.history.items():
-            table.add_row(
-                str(k),
-                f"{v['Train Loss']:.6f}",
-                f"{v['Val Loss']:.6f}" if v['Val Loss'] is not None else "N/A",
-                f"{v['Body LR']:.6f}",
-                f"{v['Head LR']:.6f}"
-            )
-
-        # Set show_header to False for subsequent calls
-        self.show_header = False
-
-        # Display the table below the progress bar
+        if not hasattr(self, 'table'):  # Create the table if it doesn't exist
+            self.table = Table(show_header=True, header_style="bold white")
+            self.table.add_column("Step", justify="right", style="white")
+            self.table.add_column("Train Loss", justify="right", style="white")
+            self.table.add_column("Val Loss", justify="right", style="white")
+            self.table.add_column("Body LR", justify="right", style="white")
+            self.table.add_column("Head LR", justify="right", style="white")
+    
+        # Add a new row to the existing table
+        self.table.add_row(
+            str(step),
+            f"{self.history[step]['Train Loss']:.6f}",
+            f"{self.history[step]['Val Loss']:.6f}" if self.history[step]['Val Loss'] is not None else "N/A",
+            f"{self.history[step]['Body LR']:.6f}",
+            f"{self.history[step]['Head LR']:.6f}"
+        )
+    
+        # Clear the console and print the updated table
         self.console.clear()
-        self.console.print(table)
+        self.console.print(self.table)
 
     def save_model(self):
         """
