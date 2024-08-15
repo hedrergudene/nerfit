@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel
-from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
+from peft import PeftModel, LoraConfig, TaskType
 
 # Model
 class nerfitModel(nn.Module):
@@ -23,10 +23,9 @@ class nerfitModel(nn.Module):
         if ((peft_lora) & (peft_config is None)):
             raise ValueError(f"You must specify LoRA parameters.")
         elif peft_config is not None:
-            self.base_model = get_peft_model(
+            self.base_model = PeftModel(
                 model=AutoModel.from_pretrained(model_name),
                 peft_config=LoraConfig(
-                    task_type=TaskType.TOKEN_CLS,
                     inference_mode=inference_mode,
                     r=peft_config['lora_r'],
                     lora_alpha=peft_config['lora_alpha'],

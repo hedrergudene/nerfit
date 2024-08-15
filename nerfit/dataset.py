@@ -24,9 +24,9 @@ class nerfitDataset(Dataset):
 
     def __getitem__(self, idx):
         annot = self.annotations[idx]
-        return self._collate_pretraining(annot)
+        return self._pretraining_data(annot)
 
-    def _collate_pretraining(self, annot):
+    def _pretraining_data(self, annot):
         # Tokenize
         tokens = self.tokenizer.encode_plus(
             annot['text'],
