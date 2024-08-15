@@ -381,8 +381,8 @@ class Trainer:
         for k,v in self.history.items():
             table.add_row(
                 str(k),
-                f"{v['train_loss']:.6f}",
-                f"{v['val_loss']:.6f}" if v['val_loss'] is not None else "N/A",
+                f"{v['Train Loss']:.6f}",
+                f"{v['Val Loss']:.6f}" if v['val_loss'] is not None else "N/A",
                 f"{v['Body LR']:.6f}",
                 f"{v['Head LR']:.6f}"
             )
