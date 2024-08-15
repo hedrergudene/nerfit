@@ -382,7 +382,7 @@ class Trainer:
             table.add_row(
                 str(k),
                 f"{v['Train Loss']:.6f}",
-                f"{v['Val Loss']:.6f}" if v['val_loss'] is not None else "N/A",
+                f"{v['Val Loss']:.6f}" if v['Val Loss'] is not None else "N/A",
                 f"{v['Body LR']:.6f}",
                 f"{v['Head LR']:.6f}"
             )
