@@ -279,6 +279,7 @@ class Trainer:
             if self.config.patience is not None:
                 if self.early_stopping_counter >= self.config.patience:
                     print(f"Early stopping at step {step + 1} due to no improvement in validation loss.")
+                    break
 
         # Close the progress bar after training completes
         progress_bar.close()
