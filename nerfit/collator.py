@@ -27,14 +27,14 @@ class nerfitDataCollator:
         max_labels_len = max(item.size(1) if item.numel() > 0 else 0 for item in labels_pretraining_batch)
 
         # Initialize the labels tensor with -100 for padding
-        labels_pretraining_batch = torch.full((len(batch), max_num_entities, max_labels_len), -100, dtype=torch.float32)
+        labels_pretraining_padded = torch.full((len(batch), max_num_entities, max_labels_len), -100, dtype=torch.float32)
         embeddings_padded = torch.zeros((len(batch), max_num_entities, self.projection_dim), dtype=torch.float32)
 
         for i, (labels, embeddings) in enumerate(zip(labels_pretraining_batch, embeddings_batch)):
             if labels.numel() > 0:
                 num_entities = labels.size(0)
                 seq_length = labels.size(1)
-                labels_pretraining_batch[i, :num_entities, :seq_length] = labels
+                labels_pretraining_padded[i, :num_entities, :seq_length] = labels
 
             if embeddings.numel() > 0:
                 num_entities = embeddings.size(0)
@@ -44,7 +44,7 @@ class nerfitDataCollator:
             'input_ids': input_ids_padded,                  # Shape (batch_size, max_num_tokens)
             'attention_mask': attention_mask_padded,        # Shape (batch_size, max_num_tokens)
             'embeddings': embeddings_padded,                # Shape (batch_size, max_num_entities, projection_dim)
-            'labels_pretraining': labels_pretraining_batch, # Shape (batch_size, max_num_entities, max_num_tokens)
+            'labels_pretraining': labels_pretraining_padded,# Shape (batch_size, max_num_entities, max_num_tokens)
             'labels_ner': labels_ner_padded                 # Shape (batch_size, max_num_tokens)
 
         }
