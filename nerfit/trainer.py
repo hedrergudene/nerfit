@@ -2,7 +2,8 @@
 import torch
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForTokenClassification
+from peft import PeftModel, TaskType
 from accelerate import Accelerator
 from itertools import cycle
 from rich.table import Table
@@ -255,7 +256,7 @@ class Trainer:
 
         for step in progress_bar:
             batch = next(train_iter)
-            loss = self._training_step(batch)
+            loss = self._training_step_pretraining(batch)
             self.optimizer.step()
             self.scheduler.step()
             self.train_loss = loss.item()
@@ -272,7 +273,7 @@ class Trainer:
 
             # Evaluation
             if (step + 1) % self.config.eval_steps == 0:
-                self._evaluate(step)  # Update the validation loss
+                self._evaluate_pretraining(step)  # Update the validation loss
             
             # Early stopping
             if self.config.patience is not None:
@@ -282,7 +283,7 @@ class Trainer:
         # Close the progress bar after training completes
         progress_bar.close()
 
-    def _training_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def _training_step_pretraining(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
         Performs a single training step: forward pass, loss calculation, and backpropagation.
 
@@ -308,7 +309,7 @@ class Trainer:
         self.accelerator.backward(loss)
         return loss
 
-    def _evaluate(self, step):
+    def _evaluate_pretraining(self, step:int):
         """
         Evaluates the model on the validation set and logs the validation loss.
 
@@ -351,7 +352,7 @@ class Trainer:
         # Save best ckpt
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss
-            self.save_model()
+            self._save_model(stage='pretraining')
             self.early_stopping_counter = 0
         else:
             self.early_stopping_counter += 1
@@ -397,15 +398,16 @@ class Trainer:
         self.console.clear()
         self.console.print(self.table)
 
-    def save_model(self):
+    def _save_model(self, stage:str):
         """
         Saves the model checkpoint, removing any previous checkpoint if it exists.
 
         Args:
             step (int): The current training step.
+            stage (str): Whether the training phase is 'pretraining' or 'ner'
         """
         # Define the output directory for saving the model
-        output_dir = os.path.join(self.config.output_dir, "best_checkpoint")
+        output_dir = os.path.join(self.config.output_dir, stage)
 
         # Remove previous checkpoint if it exists
         if os.path.exists(output_dir):
@@ -425,3 +427,16 @@ class Trainer:
         unwrapped_model = self.accelerator.unwrap_model(self.model)
         unwrapped_model.base_model.save_pretrained(output_dir)
         self.tokenizer.save_pretrained(output_dir)
+
+    def _setup_ner_checkpoint(self) -> Union[nerfitModel, PeftModel]:
+        if isinstance(self.model.base_model, PeftModel):
+            model = PeftModel.from_pretrained(
+                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=None),
+                model_id=os.path.join(self.config.output_dir, 'pretraining'),
+                task_type=TaskType.TOKEN_CLS,
+                is_trainable=True
+            )
+        else:
+            model = AutoModelForTokenClassification.from_pretrained(os.path.join(self.config.output_dir, 'pretraining'), num_labels=None)
+        
+        return model

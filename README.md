@@ -39,7 +39,9 @@ However, given the rich variety of NER dataset formats available, it's not possi
 
 ### Custom Trainers
 
-Here you can find a template that covers [Alexa massive dataset](https://huggingface.co/datasets/AmazonScience/massive):
+Some examples of `Trainer` custom classes for a variety of datasets are provide now:
+
+* [Alexa massive dataset](https://huggingface.co/datasets/AmazonScience/massive):
 
 <details>
 <summary>
