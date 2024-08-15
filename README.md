@@ -1,27 +1,30 @@
-# nerFit: Few-shot entity representation learning
+# nerfit: Few-shot entity representation learning
 
 ## Table of Contents
 
 1. [Introduction](#introduction)
-2. [Description](#description)
-3. [Methods](#methods)
+2. [Methods](#methods)
+
 
 ## Introduction
 
-This repository contains a contrastive Named Entity Recognition (NER) system designed to work with a classical NER setup. The project leverages state-of-the-art models from Hugging Face's `transformers` library and `SentenceTransformers` for entity description embeddings. This README provides an overview of the project's structure and functionalities.
+In the fast-evolving world of Machine Learning, innovative methods about building open-domain NER models have emerged. To be more precise:
 
-## Description
+* [nuNER](https://arxiv.org/abs/2402.15343) focuses on a contrastive pretraining of encoder models based on LLM-distilled data to make specific fine tuning on NER datasets faster. This approach, however, is not simple in terms of data acquisition, and does not provide an efficient way of tayloring a model to your data. In addition, constrastive learning pipelines tipically need large datasets *when dealing with open domain scenarios* in order to be properly calibrated, and encoder model is a copy of the original encoder, rather than a more reasonable approach like a [Sentence Transformers](https://arxiv.org/abs/1908.10084).
+* [gliNER](https://github.com/urchade/GLiNER), on the other hand, approaches NER as a combination of encoder models and "entity-prompting" methods. Despite being this method an excellent option for generic entities (names, directions, locations, etc), it lacks specificity for more complex and subtle ones.
+* [UniversalNER](https://arxiv.org/abs/2308.03279) takes a different view by leveraging knowledge distillation and emerging properties from LLMs to tag texts. Low effiency is the main drawback.
 
-The system is designed to identify and label entities in text using a contrastive learning approach. Unlike traditional NER systems where entity labels are directly predicted, this system uses embeddings to capture the semantic meaning of entity descriptions and computes similarities between token embeddings and entity description embeddings.
+`nerfit` is conceived to bridge the gap between:
 
-### Key Features
-
-- **Classical NER Setup**: The system utilizes a predefined set of entity labels, each with a consistent and comprehensive description, simplifying the data processing and model training.
-- **Contrastive Learning**: Instead of directly predicting labels, the model computes a contrastive loss to differentiate between positive and negative samples, improving the accuracy of entity recognition.
-- **Pretrained Models**: The system leverages pretrained models from Hugging Face and SentenceTransformers for efficient and accurate encoding and tokenization, ensuring state-of-the-art performance.
+* Modularity: Build your model using any data, with any models, in any language. Democratization at its finest!
+* Speed: Encoder models and parameter-efficient strategies make both training and inference blazing fast.
+* Efficiency: A smart combination of weak and strong supervision overcomes large data needs in NER settings.
+* Simplicity: Adapt out `Trainer` class with your data parsing method, and you're good to go!
 
 
 ## Methods
+
+### Overview
 
 The `Trainer` object is responsible for managing the entire training pipeline, from data preparation to model optimization and evaluation. It encapsulates all the necessary components, including the model, tokenizer, data loaders, optimizer, and training loop. The `Trainer` is configured via the `TrainerConfig` class, which allows you to specify various parameters such as learning rates, batch size, and more.
 
@@ -34,11 +37,13 @@ However, given the rich variety of NER dataset formats available, it's not possi
 }
 ```
 
-Here you can find some templates that cover most of the NER dataset templates:
+### Custom Trainers
+
+Here you can find a template that covers [Alexa massive dataset](https://huggingface.co/datasets/AmazonScience/massive):
 
 <details>
 <summary>
-[Alexa massive dataset](https://huggingface.co/datasets/AmazonScience/massive):
+Click to open
 </summary>
 
 Annotations have this structure:
@@ -90,6 +95,11 @@ class CustomTrainer(Trainer):
         return output
 ```
 </details>
+
+### Entity-embeddings lookup table
+
+<img src="images/dataset.PNG"  width="100%" height="70%" style="display: block; margin: 0 auto">
+
 
 
 ## Contributing

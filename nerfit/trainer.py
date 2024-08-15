@@ -247,37 +247,25 @@ class Trainer:
         self.model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
         self.model.train()
         train_iter = cycle(self.train_dataloader)
-        loss_values = []
-        history = {}
-        val_loss = None  # Initialize validation loss as None
         self._reset_params() # Initialize training params
 
         # Initialize the progress bar
         progress_bar = tqdm(range(self.config.num_steps), desc="Training", unit="step")
-        console = Console()
+        
 
         for step in progress_bar:
             batch = next(train_iter)
             loss = self._training_step(batch)
             self.optimizer.step()
             self.scheduler.step()
-            loss_values.append(loss.item())
+            self.train_loss = loss.item()
 
             # Update the progress bar with the current training loss
-            progress_bar.set_postfix({"train_loss": loss.item(), "val_loss": val_loss if val_loss is not None else "N/A"})
+            progress_bar.set_postfix({"train_loss": self.train_loss, "val_loss": self.val_loss if self.val_loss is not None else "N/A"})
 
             # Evaluation
             if (step + 1) % self.config.eval_steps == 0:
-                val_loss = self._evaluate()  # Update the validation loss
-                # Update the table below the progress bar
-                self._print_metrics_table(step + 1, loss_values[-1], val_loss, console)
-                # Create record
-                history[step+1] = {
-                "Train Loss": loss_values[-1],
-                "Val Loss": val_loss,
-                "Body LR": self.optimizer.param_groups[0]['lr'],
-                "Head LR": self.optimizer.param_groups[1]['lr']
-            }
+                self._evaluate(step)  # Update the validation loss
             
             # Early stopping
             if self.config.patience is not None:
@@ -286,8 +274,7 @@ class Trainer:
 
         # Close the progress bar after training completes
         progress_bar.close()
-
-        return history
+        self.console.clear()
 
     def _training_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
@@ -315,7 +302,7 @@ class Trainer:
         self.accelerator.backward(loss)
         return loss
 
-    def _evaluate(self):
+    def _evaluate(self, step):
         """
         Evaluates the model on the validation set and logs the validation loss.
 
@@ -343,7 +330,17 @@ class Trainer:
 
                 val_loss += loss.item()
 
-        val_loss /= len(self.val_dataloader)
+        self.val_loss = val_loss / len(self.val_dataloader)
+        # Create record
+        self.history[step+1] = {
+            "Train Loss": self.train_loss,
+            "Val Loss": self.val_loss,
+            "Body LR": self.optimizer.param_groups[0]['lr'],
+            "Head LR": self.optimizer.param_groups[1]['lr']
+        }
+
+        # Update the table below the progress bar
+        self._print_metrics_table(step + 1)
 
         # Save best ckpt
         if val_loss < self.best_val_loss == 0:
@@ -358,47 +355,44 @@ class Trainer:
         return val_loss
 
     def _reset_params(self) -> None:
+        self.train_loss = None
+        self.val_loss = None
+        self.history = {}
         self.show_header = True
         self.best_val_loss = float('inf')
         self.early_stopping_counter = 0
+        self.console = Console(style="black")
 
-    def _print_metrics_table(
-            self,
-            step: int,
-            train_loss: float,
-            val_loss: float,
-            console: Console
-    ) -> None:
+    def _print_metrics_table(self, step: int) -> None:
         """
         Prints a table with the current training and validation metrics.
 
         Args:
             step (int): The current training step.
-            train_loss (float): The current training loss.
-            val_loss (float): The current validation loss.
-            console (Console): The Rich console object for printing.
         """
-        table = Table(show_header=self.show_header, header_style="bold magenta")
-        table.add_column("Step", justify="right")
-        table.add_column("Train Loss", justify="right")
-        table.add_column("Val Loss", justify="right")
-        table.add_column("Body LR", justify="right")
-        table.add_column("Head LR", justify="right")
+        table = Table(show_header=self.show_header, header_style="bold white")
+        table.add_column("Step", justify="right", style="white")
+        table.add_column("Train Loss", justify="right", style="white")
+        table.add_column("Val Loss", justify="right", style="white")
+        table.add_column("Body LR", justify="right", style="white")
+        table.add_column("Head LR", justify="right", style="white")
 
         # Add rows with current metrics
-        table.add_row(
-            str(step),
-            f"{train_loss:.6f}",
-            f"{val_loss:.6f}" if val_loss is not None else "N/A",
-            f"{self.optimizer.param_groups[0]['lr']:.6f}",
-            f"{self.optimizer.param_groups[1]['lr']:.6f}"
-        )
+        for k,v in self.history.items():
+            table.add_row(
+                str(k),
+                f"{v['train_loss']:.6f}",
+                f"{v['val_loss']:.6f}" if v['val_loss'] is not None else "N/A",
+                f"{v['Body LR']:.6f}",
+                f"{v['Head LR']:.6f}"
+            )
 
         # Set show_header to False for subsequent calls
         self.show_header = False
 
         # Display the table below the progress bar
-        console.print(table)
+        self.console.clear()
+        self.console.print(table)
 
     def save_model(self):
         """
