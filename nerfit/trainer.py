@@ -273,7 +273,7 @@ class Trainer:
             self.train_loss = loss.item()
 
             # Update progress information
-            steps_completed += 1
+            self.steps_completed += 1
             current_time = time.time()
             elapsed_time = current_time - self.start_time
             time_since_last_update = current_time - self.last_time
