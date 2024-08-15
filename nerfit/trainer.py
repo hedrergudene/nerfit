@@ -7,6 +7,8 @@ from accelerate import Accelerator
 from itertools import cycle
 from rich.table import Table
 from rich.console import Console
+from rich.progress import Progress, BarColumn, TextColumn
+import time
 from tqdm.auto import tqdm
 import json
 import os
@@ -249,32 +251,60 @@ class Trainer:
         train_iter = cycle(self.train_dataloader)
         self._reset_params() # Initialize training params
 
-        # Initialize the progress bar
-        progress_bar = tqdm(range(self.config.num_steps), desc="Training", unit="step")
-        
+        # Initialize the progress bar with rich
+        with Progress(
+            BarColumn(),
+            TextColumn("[bold white]Steps {task.completed}/{task.total}"),
+            TextColumn("[bold white]Time {task.fields[current_time]} < {task.fields[est_time]}"),
+            TextColumn("[bold white]Steps/sec {task.fields[steps_per_sec]:.2f}"),            
+            transient=True
+        ) as progress:
+            task = progress.add_task("Training", total=self.config.num_steps, fields={
+                "current_time": "00:00:00",
+                "est_time": "00:00:00",
+                "steps_per_sec": 0.0
+            })
 
-        for step in progress_bar:
+        for step in range(self.config.num_steps):
             batch = next(train_iter)
             loss = self._training_step(batch)
             self.optimizer.step()
             self.scheduler.step()
             self.train_loss = loss.item()
 
-            # Update the progress bar with the current training loss
-            progress_bar.set_postfix({"train_loss": self.train_loss, "val_loss": self.val_loss if self.val_loss is not None else "N/A"})
+            # Update progress information
+            steps_completed += 1
+            current_time = time.time()
+            elapsed_time = current_time - self.start_time
+            time_since_last_update = current_time - self.last_time
+            steps_per_sec = self.steps_completed / elapsed_time
+
+            # Estimate remaining time
+            remaining_steps = self.config.num_steps - self.steps_completed
+            est_time_seconds = (remaining_steps / steps_per_sec) if steps_per_sec > 0 else 0
+            est_time = time.strftime("%H:%M:%S", time.gmtime(est_time_seconds))
+            current_time_str = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
+
+            # Update the progress bar
+            progress.update(task, advance=1, fields={
+                "current_time": current_time_str,
+                "est_time": est_time,
+                "steps_per_sec": steps_per_sec
+            })
+
+            # Update time tracker
+            self.last_time = current_time
 
             # Evaluation
             if (step + 1) % self.config.eval_steps == 0:
                 self._evaluate(step)  # Update the validation loss
+                # Update progress bar with the latest validation loss
+                progress.update(task, fields={"val_loss": self.val_loss if self.val_loss is not None else 0.0})
             
             # Early stopping
             if self.config.patience is not None:
                 if self.early_stopping_counter >= self.config.patience:
                     print(f"Early stopping at step {step + 1} due to no improvement in validation loss.")
-
-        # Close the progress bar after training completes
-        progress_bar.close()
-        self.console.clear()
 
     def _training_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
@@ -362,6 +392,9 @@ class Trainer:
         self.best_val_loss = float('inf')
         self.early_stopping_counter = 0
         self.console = Console(style="black")
+        self.start_time = time.time()  # Start timing
+        self.last_time = self.start_time
+        self.steps_completed = 0
 
     def _print_metrics_table(self, step: int) -> None:
         """
@@ -377,7 +410,7 @@ class Trainer:
             self.table.add_column("Val Loss", justify="right", style="white")
             self.table.add_column("Body LR", justify="right", style="white")
             self.table.add_column("Head LR", justify="right", style="white")
-    
+
         # Add a new row to the existing table
         self.table.add_row(
             str(step),
@@ -386,7 +419,7 @@ class Trainer:
             f"{self.history[step]['Body LR']:.6f}",
             f"{self.history[step]['Head LR']:.6f}"
         )
-    
+
         # Clear the console and print the updated table
         self.console.clear()
         self.console.print(self.table)
