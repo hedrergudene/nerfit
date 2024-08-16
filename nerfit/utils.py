@@ -2,7 +2,7 @@
 import os
 import logging as log
 import sys
-from typing import List, Dict
+from typing import List, Dict, Union
 from sentence_transformers import SentenceTransformer
 import torch
 from litellm import completion
@@ -21,7 +21,14 @@ root.addHandler(handler)
 
 # Helper method to get sentence embeddings for entities classes
 def build_lookup_table(
-    annotations:List[str],
+    annotations:List[
+            Union[
+                Dict[str,str],
+                Dict[str,List[List[str]]],
+                Dict[str,List[Dict[str,Union[int,str]]]],
+                str
+            ]
+        ],
     st_model_name:str="sentence-transformers/LaBSE",
     llm:str = "gpt-4o-mini",
 ) -> Dict[str,torch.Tensor]:
@@ -33,12 +40,11 @@ def build_lookup_table(
     # Build label-samples mapping
     ent2samples = {}
     for annotation in annotations:
-        annot = nerfitDataset._parse_annotation(annotation)
-        for _, _, entity in annot['entities']:
+        for _, _, entity in annotation['entities']:
             if entity not in ent2samples.keys():
-                ent2samples[entity] = [annotation]
-            elif ((entity in ent2samples.keys()) & (annotation not in ent2samples[entity]) & (len(ent2samples[entity])<10)):
-                ent2samples[entity].append(annotation)
+                ent2samples[entity] = [annotation['text']]
+            elif ((entity in ent2samples.keys()) & (annotation['text'] not in ent2samples[entity]) & (len(ent2samples[entity])<10)):
+                ent2samples[entity].append(annotation['text'])
             else:
                 continue
 

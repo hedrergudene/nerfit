@@ -64,7 +64,7 @@ class nerfitTrainer:
         """
         self.config = config
         self.tokenizer = self._prepare_tokenizer()
-        self.ent2emb = self._prepare_embeddings(config.ent2emb)
+        self.ent2emb = self._prepare_embeddings(config.ent2emb, config.train_annotations, config.val_annotations)
         self.train_dataset, self.val_dataset = self._prepare_dataset(config.train_annotations, config.val_annotations)
         self.model = self._prepare_model(self.config.peft_lora, self.config.peft_config)
         self.collate_fn = self._prepare_data_collator()
@@ -86,9 +86,32 @@ class nerfitTrainer:
         raise NotImplementedError(f"This is a base class; you must build your own parsing strategy for your dataset.")
 
 
-    def _prepare_embeddings(self, ent2emb:Optional[Dict[str, Union[torch.Tensor, str]]]) -> torch.Tensor:
+    def _prepare_embeddings(
+            self,
+            ent2emb:Optional[Dict[str, Union[torch.Tensor, str]]],
+                train_annotations: Optional[
+                    List[
+                        Union[
+                            Dict[str,str],
+                            Dict[str,List[List[str]]],
+                            Dict[str,List[Dict[str,Union[int,str]]]],
+                            str
+                        ]
+                    ]
+                ],
+                val_annotations: Optional[
+                    List[
+                        Union[
+                            Dict[str,str],
+                            Dict[str,List[List[str]]],
+                            Dict[str,List[Dict[str,Union[int,str]]]],
+                            str
+                        ]
+                    ]
+                ]        
+    ) -> torch.Tensor:
         if ent2emb is None:
-            return build_lookup_table(self._parse_annotation(self.train_annotations))
+            return build_lookup_table(self._parse_annotation(self._parse_annotation(train_annotations) + self._parse_annotation(val_annotations)))
         elif all([isinstance(v,str) for _,v in ent2emb.items()]):
             return build_lookup_table_from_string(ent2emb)
         elif all([isinstance(v,torch.Tensor) for _,v in ent2emb.items()]):
