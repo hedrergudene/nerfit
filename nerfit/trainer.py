@@ -64,8 +64,8 @@ class nerfitTrainer:
         """
         self.config = config
         self.tokenizer = self._prepare_tokenizer()
-        self.train_dataset, self.val_dataset = self._prepare_dataset(config.train_annotations, config.val_annotations)
         self.ent2emb = self._prepare_embeddings(config.ent2emb)
+        self.train_dataset, self.val_dataset = self._prepare_dataset(config.train_annotations, config.val_annotations)
         self.model = self._prepare_model(self.config.peft_lora, self.config.peft_config)
         self.collate_fn = self._prepare_data_collator()
         self.args_pretraining = self._prepare_pretraining_config(args_pretraining)
