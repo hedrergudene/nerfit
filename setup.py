@@ -12,10 +12,11 @@ setup(
         "transformers==4.44.0",
         "peft==0.12.0",
         "accelerate==0.33.0",
+        "evaluate==0.4.2",
         "sentence_transformers==3.0.1",
         "litellm==1.43.7",
         "safetensors==0.4.4",
-        "rich==13.7.1",
+        "numpy==1.26.0",
         "fire==0.6.0"
     ],
     extras_require={

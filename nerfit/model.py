@@ -15,8 +15,7 @@ class nerfitModel(nn.Module):
             #temperature:float=1.,
             #eps:float=1e-5,
             peft_lora:bool=False,
-            peft_config:Optional[Dict[str,Union[int,float,bool]]]=None,
-            inference_mode:bool=False
+            peft_config:Optional[Dict[str,Union[int,float,bool]]]=None
     ):
         super(nerfitModel, self).__init__()
         # Load model
@@ -26,7 +25,7 @@ class nerfitModel(nn.Module):
             self.base_model = PeftModel(
                 model=AutoModel.from_pretrained(model_name),
                 peft_config=LoraConfig(
-                    inference_mode=inference_mode,
+                    inference_mode=peft_config['inference_mode'],
                     r=peft_config['lora_r'],
                     lora_alpha=peft_config['lora_alpha'],
                     lora_dropout=peft_config['lora_dropout'],
@@ -38,11 +37,25 @@ class nerfitModel(nn.Module):
         # Last layer
         self.projection_layer = nn.Linear(self.base_model.base_model.config.hidden_size, projection_dim)
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, labels_pretraining=None, embeddings=None):
         outputs = self.base_model(input_ids=input_ids, attention_mask=attention_mask)
         last_hidden_states = outputs.last_hidden_state # Shape (batch_size, num_tokens, hidden_dim)
 
         token_embeddings_projected = self.projection_layer(last_hidden_states) # Shape (batch_size, num_tokens, projection_dim)
         token_embeddings_normalized = F.normalize(token_embeddings_projected, p=2, dim=-1)
 
-        return token_embeddings_normalized
+        if ((labels_pretraining is not None) & (embeddings is not None)):
+            mask = (labels_pretraining != -100)
+
+            if embeddings.size(1) > 0:
+                logits = torch.bmm(embeddings, token_embeddings_normalized.transpose(1, 2))
+                logits = logits * mask
+                labels = labels_pretraining * mask
+                loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
+                loss = loss / mask.sum()
+            else:
+                loss = torch.tensor(0.0, device=labels.device)
+            
+            return {'loss': loss, 'logits': token_embeddings_normalized}
+        else:
+            return {'loss': None, 'logits': token_embeddings_normalized}
