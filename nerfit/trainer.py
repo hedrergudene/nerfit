@@ -46,7 +46,6 @@ class TrainerConfig:
         dataloader_num_workers: int = 4,
         num_steps: int = 1000,
         eval_steps: int = 100,
-        logging_steps: int = 100,
         batch_size: int = 32,
         backbone_lr: float = 2e-5,
         projection_lr: float = 1e-4,
@@ -67,7 +66,6 @@ class TrainerConfig:
             dataloader_num_workers (int, optional): CPU parallelisation when loading data. Defaults to 4.
             num_steps (int, optional): Number of training steps. Defaults to 1000.
             eval_steps (int, optional): Number of steps between each evaluation-callback. Defaults to 100.
-            logging_steps (int, optional): Number of steps between logging metrics. Defaults to 100.
             batch_size (int, optional): Batch size for training. Defaults to 32.
             backbone_lr (float, optional): Learning rate for the backbone model. Defaults to 2e-5.
             projection_lr (float, optional): Learning rate for the projection layer. Defaults to 1e-4.
@@ -86,7 +84,6 @@ class TrainerConfig:
         self.dataloader_num_workers = dataloader_num_workers
         self.num_steps = num_steps
         self.eval_steps = eval_steps
-        self.logging_steps = logging_steps
         self.batch_size = batch_size
         self.backbone_lr = backbone_lr
         self.projection_lr = projection_lr
