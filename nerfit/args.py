@@ -1,5 +1,6 @@
 # Libraries
 import torch
+import evaluate
 from typing import Optional, List, Callable, Dict, Any, Union
 
 
@@ -43,3 +44,4 @@ class nerfitArguments:
         self.ent2emb = ent2emb
         self.peft_lora = peft_lora
         self.peft_config = peft_config
+        self.metric = evaluate.load("seqeval")

@@ -1,10 +1,13 @@
+from .args import nerfitArguments
+from .callbacks import SavePeftModelCallback
 from .collator import nerfitDataCollator
 from .dataset import nerfitDataset
 from .model import nerfitModel
-from .trainer import nerfitTrainer, nerfitArguments
+from .trainer import nerfitTrainer
 
 __all__ = [
     "nerfitDataCollator",
+    "SavePeftModelCallback",
     "nerfitDataset",
     "nerfitModel",
     "nerfitTrainer",
