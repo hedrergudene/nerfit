@@ -1,14 +1,14 @@
 from .collator import nerfitDataCollator
 from .dataset import nerfitDataset
 from .model import nerfitModel
-from .trainer import Trainer, TrainerConfig
+from .trainer import nerfitTrainer, nerfitArguments
 
 __all__ = [
     "nerfitDataCollator",
     "nerfitDataset",
     "nerfitModel",
-    "Trainer",
-    "TrainerConfig"
+    "nerfitTrainer",
+    "nerfitArguments"
 ]
 
 __version__ = "0.1.0"
