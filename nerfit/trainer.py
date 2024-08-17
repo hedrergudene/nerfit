@@ -27,6 +27,8 @@ class nerfitTrainer:
         self.collate_fn = self._prepare_data_collator()
         self.args_pretraining = self._prepare_pretraining_config(args_pretraining)
         self.args_ner = self._prepare_ner_config(args_ner)
+        self.best_ckpt_pretraining_path = None
+        self.best_ckpt_ner_path = None
 
 
     @staticmethod
@@ -222,7 +224,7 @@ class nerfitTrainer:
         self._fit_ner()
 
 
-    def _fit_pretraining(self) -> None:
+    def _fit_pretraining(self) -> str:
         """
         The main training loop that iterates through training steps, logs metrics, evaluates the model, and saves checkpoints.
         """
@@ -236,6 +238,7 @@ class nerfitTrainer:
             callbacks=[SavePeftModelCallback]
         )
         trainer.train()
+        self.best_ckpt_pretraining_path = trainer.state.best_model_checkpoint
 
 
     def _fit_ner(self) -> None:
@@ -250,6 +253,7 @@ class nerfitTrainer:
             callbacks=[SavePeftModelCallback]
         )
         trainer.train()
+        self.best_ckpt_ner_path = trainer.state.best_model_checkpoint
 
 
     def _compute_metrics(self, eval_preds) -> Dict:
@@ -276,13 +280,13 @@ class nerfitTrainer:
     def _setup_ner_checkpoint(self) -> Union[AutoModelForTokenClassification, PeftModel]:
         if isinstance(self.model.base_model, PeftModel):
             model = PeftModel.from_pretrained(
-                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=len(self.train_dataset.id2label)),
-                model_id=self.args_pretraining.output_dir,
+                model=AutoModelForTokenClassification.from_pretrained(self.best_ckpt_pretraining_path, num_labels=len(self.train_dataset.id2label)),
+                model_id=self.best_ckpt_pretraining_path,
                 task_type=TaskType.TOKEN_CLS,
                 is_trainable=True
             )
         else:
-            model = AutoModelForTokenClassification.from_pretrained(self.args_pretraining.output_dir, num_labels=len(self.train_dataset.id2label))
+            model = AutoModelForTokenClassification.from_pretrained(self.best_ckpt_pretraining_path, num_labels=len(self.train_dataset.id2label))
         return model
 
 
