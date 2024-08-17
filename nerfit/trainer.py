@@ -242,7 +242,7 @@ class nerfitTrainer:
 
 
     def _fit_ner(self) -> None:
-        trainer =  Trainer(
+        trainer =  CustomNERTrainer(
             self.model,
             self.args_ner,
             train_dataset=self.train_dataset,
@@ -280,7 +280,7 @@ class nerfitTrainer:
     def _setup_ner_checkpoint(self) -> Union[AutoModelForTokenClassification, PeftModel]:
         if isinstance(self.model.base_model, PeftModel):
             model = PeftModel.from_pretrained(
-                model=AutoModelForTokenClassification.from_pretrained(self.best_ckpt_pretraining_path, num_labels=len(self.train_dataset.id2label)),
+                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=len(self.train_dataset.id2label)),
                 model_id=self.best_ckpt_pretraining_path,
                 task_type=TaskType.TOKEN_CLS,
                 is_trainable=True
@@ -299,5 +299,20 @@ class CustomPreTrainer(Trainer):
         Subclass and override for custom behavior.
         """
         inputs.pop("labels_ner")
+        outputs = model(**inputs)
+        return (outputs['loss'], outputs['logits']) if return_outputs else outputs['loss']
+
+
+# Huggingface wrapper for pretraining stage
+class CustomNERTrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False):
+        """
+        How the loss is computed by Trainer. By default, all models return the loss in the first element.
+
+        Subclass and override for custom behavior.
+        """
+        inputs["labels"] = inputs.pop("labels_ner")
+        inputs.pop("embeddings")
+        inputs.pop("labels_pretraining")
         outputs = model(**inputs)
         return (outputs['loss'], outputs['logits']) if return_outputs else outputs['loss']
