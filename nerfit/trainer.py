@@ -246,7 +246,8 @@ class nerfitTrainer:
             eval_dataset=self.val_dataset,
             data_collator=self.collate_fn,
             tokenizer=self.tokenizer,
-            compute_metrics=self._compute_metrics
+            compute_metrics=self._compute_metrics,
+            callbacks=[SavePeftModelCallback]
         )
         trainer.train()
 
