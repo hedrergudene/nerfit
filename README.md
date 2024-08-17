@@ -11,7 +11,7 @@
 In the fast-evolving world of Machine Learning, innovative methods about building open-domain NER models have emerged. To be more precise:
 
 * [nuNER](https://arxiv.org/abs/2402.15343) focuses on a contrastive pretraining of encoder models based on LLM-distilled data to make specific fine tuning on NER datasets faster. This approach, however, is not simple in terms of data acquisition, and does not provide an efficient way of tayloring a model to your data. In addition, constrastive learning pipelines tipically need large datasets *when dealing with open domain scenarios* in order to be properly calibrated, and encoder model is a copy of the original encoder, rather than a more reasonable approach like a [Sentence Transformers](https://arxiv.org/abs/1908.10084).
-* [gliNER](https://github.com/urchade/GLiNER), on the other hand, approaches NER as a combination of encoder models and "entity-prompting" methods. Despite being this method an excellent option for generic entities (names, directions, locations, etc), it lacks specificity for more complex and subtle ones.
+* [gliNER](https://arxiv.org/abs/2311.08526), on the other hand, approaches NER as a combination of encoder models and "entity-prompting" methods. Despite being this method an excellent option for generic entities (names, directions, locations, etc), it lacks specificity for more complex and subtle ones.
 * [UniversalNER](https://arxiv.org/abs/2308.03279) takes a different view by leveraging knowledge distillation and emerging properties from LLMs to tag texts. Low effiency is the main drawback.
 
 `nerfit` is conceived to bridge the gap between:
@@ -100,7 +100,7 @@ class CustomTrainer(Trainer):
 
 ### Entity-embeddings lookup table
 
-One of the cornerstones of this project is to 
+One of the cornerstones of this project is to apply a token-level contrastive learning stage, based upon entities description embeddings provided by a [`Sentence Transformers`](https://sbert.net/) model. As we do not aim, however, to train open-domain models with a plethora of entities and descriptions resulting of LLM knowledge distilation (see nuNER reference), we can efficiently build a lookup mapping of entities and embedding representations, instead of dynamically compute them.
 
 <img src="images/dataset.PNG"  width="100%" height="70%" style="display: block; margin: 0 auto">
 
