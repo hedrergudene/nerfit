@@ -340,7 +340,9 @@ class CustomNERTrainer(Trainer):
         """
 
         # Extract labels_ner from inputs
-        labels = inputs.get("labels_ner", None)
+        inputs.pop("labels_pretraining")
+        inputs.pop("embeddings")
+        inputs['labels'] = inputs.pop('labels_ner')
 
         # Prepare inputs
         inputs = self._prepare_inputs(inputs)
