@@ -7,7 +7,7 @@ from typing import Optional, List, Callable, Dict, Union, Tuple, Any
 import evaluate
 from nerfit.args import nerfitArguments
 from nerfit.callbacks import SavePeftModelCallback
-from nerfit.collator import nerfitDataCollator
+from nerfit.collator import nerfitDataCollator, nerDataCollator
 from nerfit.dataset import nerfitDataset
 from nerfit.model import nerfitModel
 from nerfit.utils import build_lookup_table, build_lookup_table_from_string
@@ -26,6 +26,7 @@ class nerfitTrainer:
         self.train_dataset, self.val_dataset = self._prepare_dataset(config.train_annotations, config.val_annotations)
         self.model = self._prepare_model(self.config.peft_lora, self.config.peft_config)
         self.collate_fn = self._prepare_data_collator()
+        self.collate_fn_ner = self._prepare_data_collator_ner()
         self.args_pretraining = self._prepare_pretraining_config(args_pretraining)
         self.args_ner = self._prepare_ner_config(args_ner)
         self.metric = evaluate.load("seqeval")
@@ -109,6 +110,20 @@ class nerfitTrainer:
             Callable: The data collator function.
         """
         return nerfitDataCollator(
+            pad_token_id=self.tokenizer.pad_token_id,
+            max_length=self.model.base_model.config.max_position_embeddings,
+            projection_dim=self.model.projection_layer.out_features
+        )
+
+
+    def _prepare_data_collator_ner(self) -> Callable:
+        """
+        Returns the data collator function for padding and batching the data.
+
+        Returns:
+            Callable: The data collator function.
+        """
+        return nerDataCollator(
             pad_token_id=self.tokenizer.pad_token_id,
             max_length=self.model.base_model.config.max_position_embeddings,
             projection_dim=self.model.projection_layer.out_features
@@ -245,12 +260,12 @@ class nerfitTrainer:
 
 
     def _fit_ner(self) -> None:
-        trainer =  CustomNERTrainer(
+        trainer =  Trainer(
             self.model,
             self.args_ner,
             train_dataset=self.train_dataset,
             eval_dataset=self.val_dataset,
-            data_collator=self.collate_fn,
+            data_collator=self.collate_fn_ner,
             tokenizer=self.tokenizer,
             compute_metrics=self._compute_metrics,
             callbacks=[SavePeftModelCallback]
@@ -304,73 +319,3 @@ class CustomPreTrainer(Trainer):
         inputs.pop("labels_ner")
         outputs = model(**inputs)
         return (outputs['loss'], outputs['logits']) if return_outputs else outputs['loss']
-
-
-class CustomNERTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
-        """
-        How the loss is computed by Trainer. By default, all models return the loss in the first element.
-
-        Subclass and override for custom behavior.
-        """
-        inputs.pop("labels_pretraining")
-        inputs.pop("embeddings")
-        inputs['labels'] = inputs.pop('labels_ner')
-        outputs = model(**inputs)
-        return (outputs['loss'], outputs['logits']) if return_outputs else outputs['loss']
-
-    def prediction_step(
-        self,
-        model: torch.nn.Module,
-        inputs: Dict[str, Union[torch.Tensor, Any]],
-        prediction_loss_only: bool,
-        ignore_keys: Optional[List[str]] = None,
-    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-        """
-        Perform an evaluation step on the model using inputs.
-
-        Args:
-            model (nn.Module): The model to evaluate.
-            inputs (Dict[str, Union[torch.Tensor, Any]]): The inputs and targets of the model. Expects 'labels_ner' in inputs.
-            prediction_loss_only (bool): Whether or not to return the loss only.
-            ignore_keys (List[str], optional): Keys to ignore in the model output.
-
-        Returns:
-            Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]: A tuple with loss, logits, and labels.
-        """
-
-        # Extract labels_ner from inputs
-        inputs.pop("labels_pretraining")
-        inputs.pop("embeddings")
-        inputs['labels'] = inputs.pop('labels_ner')
-
-        # Prepare inputs
-        inputs = self._prepare_inputs(inputs)
-
-        # Set ignore_keys to an empty list if not provided
-        if ignore_keys is None:
-            ignore_keys = []
-
-        # Forward pass
-        with torch.no_grad():
-            outputs = model(**inputs)
-
-            # Extract logits and loss
-            if isinstance(outputs, dict):
-                logits = [v for k, v in outputs.items() if k not in ignore_keys]
-                loss = outputs.get("loss", None)
-            else:
-                logits = outputs[1:]  # Assuming the model returns loss as the first element
-                loss = outputs[0] if len(outputs) > 1 else None
-
-            if loss is not None:
-                loss = loss.mean().detach().cpu()
-
-        if prediction_loss_only:
-            return (loss, None, None)
-
-        # Detach logits if necessary
-        logits = torch.stack(logits) if isinstance(logits, list) else logits
-        logits = logits.detach().cpu()
-
-        return (loss, logits, inputs['labels'])

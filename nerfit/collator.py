@@ -81,7 +81,7 @@ class nerDataCollator:
         return {
             'input_ids': input_ids_padded,                  # Shape (batch_size, max_num_tokens)
             'attention_mask': attention_mask_padded,        # Shape (batch_size, max_num_tokens)
-            'labels_ner': labels_ner_padded                 # Shape (batch_size, max_num_tokens)
+            'labels_ner': labels_ner_padded                     # Shape (batch_size, max_num_tokens)
 
         }
 
