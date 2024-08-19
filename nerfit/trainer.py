@@ -1,7 +1,7 @@
 # Libraries
 import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainer, TrainingArguments
-from peft import PeftModel, TaskType
+from peft import PeftModel, PeftModelForTokenClassification, TaskType
 import numpy as np
 from typing import Optional, List, Callable, Dict, Union, Tuple, Any
 import evaluate
@@ -318,12 +318,11 @@ class nerfitTrainer:
         return metrics 
 
 
-    def _setup_ner_checkpoint(self) -> Union[AutoModelForTokenClassification, PeftModel]:
-        if isinstance(self.model.base_model, PeftModel):
-            model = PeftModel.from_pretrained(
+    def _setup_ner_checkpoint(self) -> Union[AutoModelForTokenClassification, PeftModelForTokenClassification]:
+        if self.config.peft_lora:
+            model = PeftModelForTokenClassification.from_pretrained(
                 model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=len(self.train_dataset_ner.id2label)),
                 model_id=self.best_ckpt_pretraining_path,
-                task_type=TaskType.TOKEN_CLS,
                 is_trainable=True
             )
         else:

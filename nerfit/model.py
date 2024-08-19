@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from transformers import AutoModel
 from peft import PeftModel, LoraConfig, TaskType
 
-# Model
+# nerfit
 class nerfitModel(nn.Module):
     def __init__(
             self,
