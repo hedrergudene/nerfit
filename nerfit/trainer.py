@@ -8,7 +8,7 @@ import evaluate
 from nerfit.args import nerfitArguments
 from nerfit.callbacks import SavePeftModelCallback
 from nerfit.collator import nerfitDataCollator, nerDataCollator
-from nerfit.dataset import nerfitDataset
+from nerfit.dataset import nerfitDataset, nerDataset
 from nerfit.model import nerfitModel
 from nerfit.utils import build_lookup_table, build_lookup_table_from_string
 
@@ -23,9 +23,10 @@ class nerfitTrainer:
         self.config = config
         self.tokenizer = self._prepare_tokenizer()
         self.ent2emb = self._prepare_embeddings(config.ent2emb, config.train_annotations, config.val_annotations)
-        self.train_dataset, self.val_dataset = self._prepare_dataset(config.train_annotations, config.val_annotations)
+        self.train_dataset_pretraining, self.val_dataset_pretraining = self._prepare_dataset_pretraining(config.train_annotations, config.val_annotations)
+        self.train_dataset_ner, self.val_dataset_ner = self._prepare_dataset_ner(config.train_annotations, config.val_annotations)
         self.model = self._prepare_model(self.config.peft_lora, self.config.peft_config)
-        self.collate_fn = self._prepare_data_collator()
+        self.collate_fn = self._prepare_data_collator_pretraining()
         self.collate_fn_ner = self._prepare_data_collator_ner()
         self.args_pretraining = self._prepare_pretraining_config(args_pretraining)
         self.args_ner = self._prepare_ner_config(args_ner)
@@ -82,7 +83,7 @@ class nerfitTrainer:
             raise ValueError(f"`ent2emb` must either be None, a dictionary with label-description pairs, or label-tensor pairs.")
 
 
-    def _prepare_dataset(self, train_annotations:List[Dict[str,Union[str, int]]], val_annotations:List[Dict[str,Union[str, int]]]) -> tuple[nerfitDataset, nerfitDataset]:
+    def _prepare_dataset_pretraining(self, train_annotations:List[Dict[str,Union[str, int]]], val_annotations:List[Dict[str,Union[str, int]]]) -> tuple[nerfitDataset, nerfitDataset]:
         """
         Prepares the Dataset objects for training and validation splits.
 
@@ -102,7 +103,27 @@ class nerfitTrainer:
         return train_dataset, val_dataset
 
 
-    def _prepare_data_collator(self) -> Callable:
+    def _prepare_dataset_ner(self, train_annotations:List[Dict[str,Union[str, int]]], val_annotations:List[Dict[str,Union[str, int]]]) -> tuple[nerfitDataset, nerfitDataset]:
+        """
+        Prepares the Dataset objects for training and validation splits.
+
+        Returns:
+            tuple: A tuple containing the training and validation Dataset objects.
+        """
+        train_dataset = nerDataset(
+            self._parse_annotation(train_annotations),
+            self.ent2emb,
+            self.tokenizer
+        )
+        val_dataset = nerDataset(
+            self._parse_annotation(val_annotations),
+            self.ent2emb,
+            self.tokenizer
+        )
+        return train_dataset, val_dataset
+
+
+    def _prepare_data_collator_pretraining(self) -> Callable:
         """
         Returns the data collator function for padding and batching the data.
 
@@ -224,8 +245,7 @@ class nerfitTrainer:
                 load_best_model_at_end=True,
                 greater_is_better=True,
                 save_total_limit=1,
-                label_names=['labels_ner'],
-                remove_unused_columns=True,
+                remove_unused_columns=False,
                 push_to_hub=False
             )
             return args_ner
@@ -249,8 +269,8 @@ class nerfitTrainer:
         trainer = CustomPreTrainer(
             self.model,
             self.args_pretraining,
-            train_dataset=self.train_dataset,
-            eval_dataset=self.val_dataset,
+            train_dataset=self.train_dataset_pretraining,
+            eval_dataset=self.val_dataset_pretraining,
             data_collator=self.collate_fn,
             tokenizer=self.tokenizer,
             callbacks=[SavePeftModelCallback]
@@ -263,8 +283,8 @@ class nerfitTrainer:
         trainer =  Trainer(
             self.model,
             self.args_ner,
-            train_dataset=self.train_dataset,
-            eval_dataset=self.val_dataset,
+            train_dataset=self.train_dataset_ner,
+            eval_dataset=self.val_dataset_ner,
             data_collator=self.collate_fn_ner,
             tokenizer=self.tokenizer,
             compute_metrics=self._compute_metrics,

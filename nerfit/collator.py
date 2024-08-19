@@ -71,7 +71,7 @@ class nerDataCollator:
         # Extract the individual components from the batch
         input_ids_batch = [item['input_ids'] for item in batch]
         attention_mask_batch = [item['attention_mask'] for item in batch]
-        labels_ner_batch = [item['labels_ner'] for item in batch]
+        labels_ner_batch = [item['labels'] for item in batch]
 
         # Pad input_ids, attention_mask and NER tags
         input_ids_padded = self._pad_sequence(input_ids_batch, self.pad_token_id)
@@ -81,7 +81,7 @@ class nerDataCollator:
         return {
             'input_ids': input_ids_padded,                  # Shape (batch_size, max_num_tokens)
             'attention_mask': attention_mask_padded,        # Shape (batch_size, max_num_tokens)
-            'labels_ner': labels_ner_padded                     # Shape (batch_size, max_num_tokens)
+            'labels': labels_ner_padded                     # Shape (batch_size, max_num_tokens)
 
         }
 
