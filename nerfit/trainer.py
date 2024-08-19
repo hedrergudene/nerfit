@@ -8,7 +8,7 @@ from transformers.trainer_pt_utils import nested_detach
 import evaluate
 from nerfit.args import nerfitArguments
 from nerfit.callbacks import SavePeftModelCallback
-from nerfit.collator import nerfitDataCollator
+from nerfit.collator import nerfitDataCollator, nerDataCollator
 from nerfit.dataset import nerfitDataset
 from nerfit.model import nerfitModel
 from nerfit.utils import build_lookup_table, build_lookup_table_from_string
@@ -27,6 +27,7 @@ class nerfitTrainer:
         self.train_dataset, self.val_dataset = self._prepare_dataset(config.train_annotations, config.val_annotations)
         self.model = self._prepare_model(self.config.peft_lora, self.config.peft_config)
         self.collate_fn = self._prepare_data_collator()
+        self.collate_fn_ner = self._prepare_data_collator_ner()
         self.args_pretraining = self._prepare_pretraining_config(args_pretraining)
         self.args_ner = self._prepare_ner_config(args_ner)
         self.metric = evaluate.load("seqeval")
@@ -110,6 +111,20 @@ class nerfitTrainer:
             Callable: The data collator function.
         """
         return nerfitDataCollator(
+            pad_token_id=self.tokenizer.pad_token_id,
+            max_length=self.model.base_model.config.max_position_embeddings,
+            projection_dim=self.model.projection_layer.out_features
+        )
+
+
+    def _prepare_data_collator_ner(self) -> Callable:
+        """
+        Returns the data collator function for padding and batching the data.
+
+        Returns:
+            Callable: The data collator function.
+        """
+        return nerDataCollator(
             pad_token_id=self.tokenizer.pad_token_id,
             max_length=self.model.base_model.config.max_position_embeddings,
             projection_dim=self.model.projection_layer.out_features
@@ -251,7 +266,7 @@ class nerfitTrainer:
             self.args_ner,
             train_dataset=self.train_dataset,
             eval_dataset=self.val_dataset,
-            data_collator=self.collate_fn,
+            data_collator=self.collate_fn_ner,
             tokenizer=self.tokenizer,
             compute_metrics=self._compute_metrics,
             callbacks=[SavePeftModelCallback]
