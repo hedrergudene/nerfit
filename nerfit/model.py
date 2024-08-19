@@ -37,20 +37,20 @@ class nerfitModel(nn.Module):
         # Last layer
         self.projection_layer = nn.Linear(self.base_model.base_model.config.hidden_size, projection_dim)
 
-    def forward(self, input_ids, attention_mask, labels_pretraining=None, embeddings=None):
+    def forward(self, input_ids, attention_mask, labels=None, embeddings=None):
         outputs = self.base_model(input_ids=input_ids, attention_mask=attention_mask)
         last_hidden_states = outputs.last_hidden_state # Shape (batch_size, num_tokens, hidden_dim)
 
         token_embeddings_projected = self.projection_layer(last_hidden_states) # Shape (batch_size, num_tokens, projection_dim)
         token_embeddings_normalized = F.normalize(token_embeddings_projected, p=2, dim=-1)
 
-        if ((labels_pretraining is not None) & (embeddings is not None)):
-            mask = (labels_pretraining != -100)
+        if ((labels is not None) & (embeddings is not None)):
+            mask = (labels != -100)
 
             if embeddings.size(1) > 0:
                 logits = torch.bmm(embeddings, token_embeddings_normalized.transpose(1, 2))
                 logits = logits * mask
-                labels = labels_pretraining * mask
+                labels = labels * mask
                 loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
                 loss = loss / mask.sum()
             else:

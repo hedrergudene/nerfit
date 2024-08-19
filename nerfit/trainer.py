@@ -30,7 +30,6 @@ class nerfitTrainer:
         self.collate_fn_ner = self._prepare_data_collator_ner()
         self.args_pretraining = self._prepare_pretraining_config(args_pretraining)
         self.args_ner = self._prepare_ner_config(args_ner)
-        self.metric = evaluate.load("seqeval")
         self.best_ckpt_pretraining_path = None
         self.best_ckpt_ner_path = None
 
@@ -299,12 +298,12 @@ class nerfitTrainer:
         predictions = np.argmax(logits, axis=-1)
 
         # Remove ignored index (special tokens) and convert to labels
-        true_labels = [[self.train_dataset_pretraining.id2label[l] for l in label if l != -100] for label in labels]
+        true_labels = [[self.train_dataset_ner.id2label[l] for l in label if l != -100] for label in labels]
         true_predictions = [
-            [self.train_dataset_pretraining.id2label[p] for (p, l) in zip(prediction, label) if l != -100]
+            [self.train_dataset_ner.id2label[p] for (p, l) in zip(prediction, label) if l != -100]
             for prediction, label in zip(predictions, labels)
         ]
-        all_metrics = self.metric.compute(predictions=true_predictions, references=true_labels)
+        all_metrics = self.config.metric.compute(predictions=true_predictions, references=true_labels)
         metrics = {}
         for k,v in all_metrics.items():
             if isinstance(v,dict):
@@ -318,13 +317,13 @@ class nerfitTrainer:
     def _setup_ner_checkpoint(self) -> Union[AutoModelForTokenClassification, PeftModel]:
         if isinstance(self.model.base_model, PeftModel):
             model = PeftModel.from_pretrained(
-                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=len(self.train_dataset_pretraining.id2label)),
+                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=len(self.train_dataset_ner.id2label)),
                 model_id=self.best_ckpt_pretraining_path,
                 task_type=TaskType.TOKEN_CLS,
                 is_trainable=True
             )
         else:
-            model = AutoModelForTokenClassification.from_pretrained(self.best_ckpt_pretraining_path, num_labels=len(self.train_dataset_pretraining.id2label))
+            model = AutoModelForTokenClassification.from_pretrained(self.best_ckpt_pretraining_path, num_labels=len(self.train_dataset_ner.id2label))
         return model
 
 
@@ -336,6 +335,5 @@ class CustomPreTrainer(Trainer):
 
         Subclass and override for custom behavior.
         """
-        inputs.pop("labels_ner")
         outputs = model(**inputs)
         return (outputs['loss'], outputs['logits']) if return_outputs else outputs['loss']
