@@ -3,7 +3,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainer, TrainingArguments
 from peft import PeftModel, TaskType
 import numpy as np
-from typing import Optional, List, Callable, Dict, Any, Union, Tuple
+from typing import Optional, List, Callable, Dict, Union, Tuple, Any
 import evaluate
 from nerfit.args import nerfitArguments
 from nerfit.callbacks import SavePeftModelCallback
@@ -246,7 +246,7 @@ class nerfitTrainer:
         """
         The main training loop that iterates through training steps, logs metrics, evaluates the model, and saves checkpoints.
         """
-        trainer = Trainer(
+        trainer = CustomPreTrainer(
             self.model,
             self.args_pretraining,
             train_dataset=self.train_dataset,
@@ -260,7 +260,7 @@ class nerfitTrainer:
 
 
     def _fit_ner(self) -> None:
-        trainer =  Trainer(
+        trainer =  CustomNERTrainer(
             self.model,
             self.args_ner,
             train_dataset=self.train_dataset,
@@ -319,3 +319,71 @@ class CustomPreTrainer(Trainer):
         inputs.pop("labels_ner")
         outputs = model(**inputs)
         return (outputs['loss'], outputs['logits']) if return_outputs else outputs['loss']
+
+
+class CustomNERTrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False):
+        """
+        How the loss is computed by Trainer. By default, all models return the loss in the first element.
+
+        Subclass and override for custom behavior.
+        """
+        inputs.pop("labels_pretraining")
+        inputs.pop("embeddings")
+        inputs['labels'] = inputs.pop('labels_ner')
+        outputs = model(**inputs)
+        return (outputs['loss'], outputs['logits']) if return_outputs else outputs['loss']
+
+    def prediction_step(
+        self,
+        model: torch.nn.Module,
+        inputs: Dict[str, Union[torch.Tensor, Any]],
+        prediction_loss_only: bool,
+        ignore_keys: Optional[List[str]] = None,
+    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """
+        Perform an evaluation step on the model using inputs.
+
+        Args:
+            model (nn.Module): The model to evaluate.
+            inputs (Dict[str, Union[torch.Tensor, Any]]): The inputs and targets of the model. Expects 'labels_ner' in inputs.
+            prediction_loss_only (bool): Whether or not to return the loss only.
+            ignore_keys (List[str], optional): Keys to ignore in the model output.
+
+        Returns:
+            Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]: A tuple with loss, logits, and labels.
+        """
+
+        # Extract labels_ner from inputs
+        labels = inputs.get("labels_ner", None)
+
+        # Prepare inputs
+        inputs = self._prepare_inputs(inputs)
+
+        # Set ignore_keys to an empty list if not provided
+        if ignore_keys is None:
+            ignore_keys = []
+
+        # Forward pass
+        with torch.no_grad():
+            outputs = model(**inputs)
+
+            # Extract logits and loss
+            if isinstance(outputs, dict):
+                logits = [v for k, v in outputs.items() if k not in ignore_keys]
+                loss = outputs.get("loss", None)
+            else:
+                logits = outputs[1:]  # Assuming the model returns loss as the first element
+                loss = outputs[0] if len(outputs) > 1 else None
+
+            if loss is not None:
+                loss = loss.mean().detach().cpu()
+
+        if prediction_loss_only:
+            return (loss, None, None)
+
+        # Detach logits if necessary
+        logits = torch.stack(logits) if isinstance(logits, list) else logits
+        logits = logits.detach().cpu()
+
+        return (loss, logits, labels)
