@@ -6,7 +6,6 @@ from typing import List, Dict, Union
 from sentence_transformers import SentenceTransformer
 import torch
 from litellm import completion
-from .dataset import nerfitDataset
 
 
 # Setup logs
