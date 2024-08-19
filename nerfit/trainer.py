@@ -299,9 +299,9 @@ class nerfitTrainer:
         predictions = np.argmax(logits, axis=-1)
 
         # Remove ignored index (special tokens) and convert to labels
-        true_labels = [[self.train_dataset.id2label[l] for l in label if l != -100] for label in labels]
+        true_labels = [[self.train_dataset_pretraining.id2label[l] for l in label if l != -100] for label in labels]
         true_predictions = [
-            [self.train_dataset.id2label[p] for (p, l) in zip(prediction, label) if l != -100]
+            [self.train_dataset_pretraining.id2label[p] for (p, l) in zip(prediction, label) if l != -100]
             for prediction, label in zip(predictions, labels)
         ]
         all_metrics = self.metric.compute(predictions=true_predictions, references=true_labels)
@@ -318,13 +318,13 @@ class nerfitTrainer:
     def _setup_ner_checkpoint(self) -> Union[AutoModelForTokenClassification, PeftModel]:
         if isinstance(self.model.base_model, PeftModel):
             model = PeftModel.from_pretrained(
-                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=len(self.train_dataset.id2label)),
+                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=len(self.train_dataset_pretraining.id2label)),
                 model_id=self.best_ckpt_pretraining_path,
                 task_type=TaskType.TOKEN_CLS,
                 is_trainable=True
             )
         else:
-            model = AutoModelForTokenClassification.from_pretrained(self.best_ckpt_pretraining_path, num_labels=len(self.train_dataset.id2label))
+            model = AutoModelForTokenClassification.from_pretrained(self.best_ckpt_pretraining_path, num_labels=len(self.train_dataset_pretraining.id2label))
         return model
 
 
