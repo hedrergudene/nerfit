@@ -272,7 +272,7 @@ class nerfitTrainer:
             eval_dataset=self.val_dataset_pretraining,
             data_collator=self.collate_fn,
             tokenizer=self.tokenizer,
-            callbacks=[SavePeftModelCallback]
+            callbacks=[SavePeftModelCallback] if self.config.peft_lora else []
         )
         trainer.train()
         self.best_ckpt_pretraining_path = trainer.state.best_model_checkpoint
@@ -287,7 +287,7 @@ class nerfitTrainer:
             data_collator=self.collate_fn_ner,
             tokenizer=self.tokenizer,
             compute_metrics=self._compute_metrics,
-            callbacks=[SavePeftModelCallback]
+            callbacks=[SavePeftModelCallback] if self.config.peft_lora else []
         )
         trainer.train()
         self.best_ckpt_ner_path = trainer.state.best_model_checkpoint
