@@ -4,7 +4,6 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainer
 from peft import PeftModel, TaskType
 import numpy as np
 from typing import Optional, List, Callable, Dict, Any, Union, Tuple
-from transformers.trainer_pt_utils import nested_detach
 import evaluate
 from nerfit.args import nerfitArguments
 from nerfit.callbacks import SavePeftModelCallback
@@ -247,7 +246,7 @@ class nerfitTrainer:
         """
         The main training loop that iterates through training steps, logs metrics, evaluates the model, and saves checkpoints.
         """
-        trainer = CustomPreTrainer(
+        trainer = Trainer(
             self.model,
             self.args_pretraining,
             train_dataset=self.train_dataset,
