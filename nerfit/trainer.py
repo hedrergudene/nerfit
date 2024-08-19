@@ -210,7 +210,8 @@ class nerfitTrainer:
                 load_best_model_at_end=True,
                 greater_is_better=True,
                 save_total_limit=1,
-                remove_unused_columns=False,
+                label_names=['labels_ner'],
+                remove_unused_columns=True,
                 push_to_hub=False
             )
             return args_ner
@@ -245,7 +246,7 @@ class nerfitTrainer:
 
 
     def _fit_ner(self) -> None:
-        trainer =  CustomNERTrainer(
+        trainer =  Trainer(
             self.model,
             self.args_ner,
             train_dataset=self.train_dataset,
