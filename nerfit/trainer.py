@@ -373,4 +373,4 @@ class CustomNERTrainer(Trainer):
         logits = torch.stack(logits) if isinstance(logits, list) else logits
         logits = logits.detach().cpu()
 
-        return (loss, logits, labels)
+        return (loss, logits, inputs['labels'])
