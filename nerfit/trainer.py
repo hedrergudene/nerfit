@@ -132,7 +132,7 @@ class nerfitTrainer:
         return nerfitDataCollator(
             pad_token_id=self.tokenizer.pad_token_id,
             max_length=self.model.base_model.config.max_position_embeddings,
-            projection_dim=self.model.projection_layer.out_features if self.config.peft_lora else self.model.num_labels
+            projection_dim=self.model.projection_layer.out_features
         )
 
 
@@ -146,7 +146,7 @@ class nerfitTrainer:
         return nerDataCollator(
             pad_token_id=self.tokenizer.pad_token_id,
             max_length=self.model.base_model.config.max_position_embeddings,
-            projection_dim=self.model.projection_layer.out_features if self.config.peft_lora else self.model.num_labels
+            projection_dim=self.model.projection_layer.out_features
         )
 
 
@@ -174,15 +174,12 @@ class nerfitTrainer:
         peft_lora = self.config.peft_lora
         peft_config = self.config.peft_config
 
-        if self.config.peft_lora:
-            model = nerfitModel(
-                model_name=model_name,
-                projection_dim=projection_dim,
-                peft_lora=peft_lora,
-                peft_config=peft_config
-            )
-        else:
-            model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=projection_dim)
+        model = nerfitModel(
+            model_name=model_name,
+            projection_dim=projection_dim,
+            peft_lora=peft_lora,
+            peft_config=peft_config
+        )
 
         return model
 
