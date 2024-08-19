@@ -4,8 +4,7 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainer
 from peft import PeftModel, TaskType
 import numpy as np
 from typing import Optional, List, Callable, Dict, Any, Union, Tuple
-from transformers.trainer_pt_utils import nested_detach, smp_nested_concat, smp_forward_only
-from transformers.utils import is_sagemaker_mp_enabled
+from transformers.trainer_pt_utils import nested_detach
 from nerfit.args import nerfitArguments
 from nerfit.callbacks import SavePeftModelCallback
 from nerfit.collator import nerfitDataCollator
@@ -356,45 +355,25 @@ class CustomNERTrainer(Trainer):
             labels = None
 
         with torch.no_grad():
-            if is_sagemaker_mp_enabled():
-                raw_outputs = smp_forward_only(model, inputs)
-                if has_labels or loss_without_labels:
-                    if isinstance(raw_outputs, dict):
-                        loss_mb = raw_outputs["loss"]
-                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys + ["loss"])
-                    else:
-                        loss_mb = raw_outputs[0]
-                        logits_mb = raw_outputs[1:]
+            if has_labels or loss_without_labels:
+                with self.compute_loss_context_manager():
+                    loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
+                loss = loss.mean().detach()
 
-                    loss = loss_mb.reduce_mean().detach().cpu()
-                    logits = smp_nested_concat(logits_mb)
+                if isinstance(outputs, dict):
+                    logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
                 else:
-                    loss = None
-                    if isinstance(raw_outputs, dict):
-                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys)
-                    else:
-                        logits_mb = raw_outputs
-                    logits = smp_nested_concat(logits_mb)
+                    logits = outputs[1:]
             else:
-                if has_labels or loss_without_labels:
-                    with self.compute_loss_context_manager():
-                        loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
-                    loss = loss.mean().detach()
-
-                    if isinstance(outputs, dict):
-                        logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
-                    else:
-                        logits = outputs[1:]
+                loss = None
+                with self.compute_loss_context_manager():
+                    outputs = model(**inputs)
+                if isinstance(outputs, dict):
+                    logits = tuple(v for k, v in outputs.items() if k not in ignore_keys)
                 else:
-                    loss = None
-                    with self.compute_loss_context_manager():
-                        outputs = model(**inputs)
-                    if isinstance(outputs, dict):
-                        logits = tuple(v for k, v in outputs.items() if k not in ignore_keys)
-                    else:
-                        logits = outputs
-                    if self.args.past_index >= 0:
-                        self._past = outputs[self.args.past_index - 1]
+                    logits = outputs
+                if self.args.past_index >= 0:
+                    self._past = outputs[self.args.past_index - 1]
 
         if prediction_loss_only:
             return (loss, None, None)
