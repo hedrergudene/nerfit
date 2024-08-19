@@ -5,6 +5,7 @@ from peft import PeftModel, TaskType
 import numpy as np
 from typing import Optional, List, Callable, Dict, Any, Union, Tuple
 from transformers.trainer_pt_utils import nested_detach
+import evaluate
 from nerfit.args import nerfitArguments
 from nerfit.callbacks import SavePeftModelCallback
 from nerfit.collator import nerfitDataCollator
@@ -28,6 +29,7 @@ class nerfitTrainer:
         self.collate_fn = self._prepare_data_collator()
         self.args_pretraining = self._prepare_pretraining_config(args_pretraining)
         self.args_ner = self._prepare_ner_config(args_ner)
+        self.metric = evaluate.load("seqeval")
         self.best_ckpt_pretraining_path = None
         self.best_ckpt_ner_path = None
 
