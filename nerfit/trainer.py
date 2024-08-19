@@ -3,7 +3,9 @@ import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainer, TrainingArguments
 from peft import PeftModel, TaskType
 import numpy as np
-from typing import Optional, List, Callable, Dict, Any, Union
+from typing import Optional, List, Callable, Dict, Any, Union, Tuple
+from transformers.trainer_pt_utils import nested_detach, smp_nested_concat, smp_forward_only
+from transformers.utils import is_sagemaker_mp_enabled
 from nerfit.args import nerfitArguments
 from nerfit.callbacks import SavePeftModelCallback
 from nerfit.collator import nerfitDataCollator
@@ -316,3 +318,89 @@ class CustomNERTrainer(Trainer):
         inputs.pop("labels_pretraining")
         outputs = model(**inputs)
         return (outputs['loss'], outputs['logits']) if return_outputs else outputs['loss']
+
+    def prediction_step(
+        self,
+        model: torch.nn.Module,
+        inputs: Dict[str, Union[torch.Tensor, Any]],
+        prediction_loss_only: bool,
+        ignore_keys: Optional[List[str]] = None,
+    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """
+        Override the prediction_step method to customize input handling.
+        """
+        # Remove specific keys from the inputs dictionary
+        inputs.pop("embeddings", None)
+        inputs.pop("labels_pretraining", None)
+        inputs["labels"] = inputs.pop("labels_ner")
+
+        # Continue with the original functionality
+        has_labels = False if len(self.label_names) == 0 else all(inputs.get(k) is not None for k in self.label_names)
+        return_loss = inputs.get("return_loss", None)
+        if return_loss is None:
+            return_loss = self.can_return_loss
+        loss_without_labels = True if len(self.label_names) == 0 and return_loss else False
+
+        inputs = self._prepare_inputs(inputs)
+        if ignore_keys is None:
+            if hasattr(self.model, "config"):
+                ignore_keys = getattr(self.model.config, "keys_to_ignore_at_inference", [])
+            else:
+                ignore_keys = []
+
+        if has_labels or loss_without_labels:
+            labels = nested_detach(tuple(inputs.get(name) for name in self.label_names))
+            if len(labels) == 1:
+                labels = labels[0]
+        else:
+            labels = None
+
+        with torch.no_grad():
+            if is_sagemaker_mp_enabled():
+                raw_outputs = smp_forward_only(model, inputs)
+                if has_labels or loss_without_labels:
+                    if isinstance(raw_outputs, dict):
+                        loss_mb = raw_outputs["loss"]
+                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys + ["loss"])
+                    else:
+                        loss_mb = raw_outputs[0]
+                        logits_mb = raw_outputs[1:]
+
+                    loss = loss_mb.reduce_mean().detach().cpu()
+                    logits = smp_nested_concat(logits_mb)
+                else:
+                    loss = None
+                    if isinstance(raw_outputs, dict):
+                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys)
+                    else:
+                        logits_mb = raw_outputs
+                    logits = smp_nested_concat(logits_mb)
+            else:
+                if has_labels or loss_without_labels:
+                    with self.compute_loss_context_manager():
+                        loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
+                    loss = loss.mean().detach()
+
+                    if isinstance(outputs, dict):
+                        logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
+                    else:
+                        logits = outputs[1:]
+                else:
+                    loss = None
+                    with self.compute_loss_context_manager():
+                        outputs = model(**inputs)
+                    if isinstance(outputs, dict):
+                        logits = tuple(v for k, v in outputs.items() if k not in ignore_keys)
+                    else:
+                        logits = outputs
+                    if self.args.past_index >= 0:
+                        self._past = outputs[self.args.past_index - 1]
+
+        if prediction_loss_only:
+            return (loss, None, None)
+
+        logits = nested_detach(logits)
+        if len(logits) == 1:
+            logits = logits[0]
+
+        return (loss, logits, labels)
