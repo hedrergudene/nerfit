@@ -25,7 +25,7 @@ class nerfitTrainer:
         self.ent2emb = self._prepare_embeddings(config.ent2emb, config.train_annotations, config.val_annotations)
         self.train_dataset_pretraining, self.val_dataset_pretraining = self._prepare_dataset_pretraining(config.train_annotations, config.val_annotations)
         self.train_dataset_ner, self.val_dataset_ner = self._prepare_dataset_ner(config.train_annotations, config.val_annotations)
-        self.model = self._prepare_model(self.config.peft_lora, self.config.peft_config)
+        self.model = self._prepare_model()
         self.collate_fn = self._prepare_data_collator_pretraining()
         self.collate_fn_ner = self._prepare_data_collator_ner()
         self.args_pretraining = self._prepare_pretraining_config(args_pretraining)
@@ -162,7 +162,7 @@ class nerfitTrainer:
         return AutoTokenizer.from_pretrained(self.config.model_name)
 
 
-    def _prepare_model(self, peft_lora:bool, peft_config:Optional[Dict[str,Union[int,float,bool]]]=None) -> torch.nn.Module:
+    def _prepare_model(self) -> torch.nn.Module:
         """
         Prepares the nerfitModel based on the provided configuration.
 
@@ -214,6 +214,9 @@ class nerfitTrainer:
             )
             return args_pretraining
         else:
+            args_pretraining.save_strategy="no"
+            args_pretraining.load_best_model_at_end=False
+            args_pretraining.remove_unused_columns=False
             return args_pretraining
 
 
@@ -275,7 +278,8 @@ class nerfitTrainer:
             callbacks=[SavePeftModelCallback] if self.config.peft_lora else []
         )
         trainer.train()
-        self.best_ckpt_pretraining_path = trainer.state.best_model_checkpoint
+        trainer.model.base_model.save_pretrained(self.args_pretraining.output_dir)
+        self.best_ckpt_pretraining_path = self.args_pretraining.output_dir
 
 
     def _fit_ner(self) -> None:
