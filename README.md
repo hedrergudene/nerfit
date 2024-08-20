@@ -93,6 +93,14 @@ One of the cornerstones of this project is to apply a token-level contrastive le
 
 <img src="images/dataset.PNG"  width="100%" height="70%" style="display: block; margin: 0 auto">
 
+You can either provide:
+
+* No lookup embeddings table at all.
+* A `ent2emb` dictionary mapping entities and their description in natural language.
+* A `ent2emb` dictionary mapping entities and their embeddings.
+
+Should you provide no reference of `ent2emb`, we make use of large language models (via [`litellm`](https://docs.litellm.ai/)) to turn entities samples into a reliable description, that is later embedded, but you are responsible of providing the required environment variables. The default sentence transformers model, if not specified, is [`LaBSE`](https://huggingface.co/sentence-transformers/LaBSE). It is highly recommended, though, to provide at least the natural language representation of the entities, as relying on language models could not be as effective as spending a couple of minutes of your time 😊
+
 
 ### Contrastive stage
 

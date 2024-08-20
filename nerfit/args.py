@@ -27,6 +27,8 @@ class TrainingArguments:
         ]
     ]
     ent2emb: Dict[str, torch.Tensor]
+    st_model_name: str = "sentence-transformers/LaBSE"
+    llm: str = 'no'
     peft_lora: bool = False
     peft_config: Optional[Dict[str, Union[int, float, bool]]] = None
     output_dir: str = "./output_dir"

@@ -32,10 +32,6 @@ def build_lookup_table(
     llm:str = "gpt-4o-mini",
 ) -> Dict[str,torch.Tensor]:
 
-    # Check env variable has been set
-    if not os.getenv("OPENAI_API_KEY"):
-        raise ValueError(f"Environment variable 'OPENAI_API_KEY' must be set to compute `ent2emb` from scratch.")
-
     # Build label-samples mapping
     ent2samples = {}
     for annotation in annotations:

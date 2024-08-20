@@ -76,9 +76,13 @@ class Trainer:
                 ]        
     ) -> torch.Tensor:
         if ent2emb is None:
-            return build_lookup_table(self._parse_annotation(self._parse_annotation(train_annotations) + self._parse_annotation(val_annotations)))
+            return build_lookup_table(
+                self._parse_annotation(train_annotations) + self._parse_annotation(val_annotations),
+                self.args.st_model_name,
+                self.args.llm
+            )
         elif all([isinstance(v,str) for _,v in ent2emb.items()]):
-            return build_lookup_table_from_string(ent2emb)
+            return build_lookup_table_from_string(ent2emb, self.args.st_model_name)
         elif all([isinstance(v,torch.Tensor) for _,v in ent2emb.items()]):
             return ent2emb
         else:
