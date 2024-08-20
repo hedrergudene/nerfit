@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from safetensors.torch import safe_open
 from typing import List, Union, Dict
-from ..nerfit.trainer import Trainer, TrainerConfig
+from ..nerfit.trainer import Trainer, TrainingArguments
 
 
 # Testing trainer
@@ -84,7 +84,7 @@ class TestTrainer(unittest.TestCase):
         ent2emb = safe_open('./artifacts/ent2emb.safetensors')
 
         # Initialize tokenizer and config
-        config = TrainerConfig(
+        config = TrainingArguments(
             model_name='roberta-base',
             train_annotations=annotations,
             val_annotations=annotations,

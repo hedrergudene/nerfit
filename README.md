@@ -115,7 +115,7 @@ An insightful idea taken from [nuNER](https://arxiv.org/abs/2402.15343) paper wa
 
 ### Training arguments
 
-We have built a simple wrapper around `transformers` objects to save tons of time of writing boilerplate code; the usage is pretty simple:
+We have built a simple wrapper around `transformers` objects to save tons of time of writing boilerplate code; the usage is pretty simple, just follow the example with the artifacts we provide in the `tests` section:
 
 ```python
 # Libraries
@@ -158,6 +158,7 @@ args = TrainingArguments(
     logging_steps=250,
     save_strategy="steps",
     save_steps=250,
+    report_to="none"
 )
 ```
 
