@@ -17,15 +17,15 @@ class nerfitDataCollator:
         embeddings_batch = [item['embeddings'] for item in batch]
 
         # Pad input_ids, attention_mask and NER tags
-        input_ids_padded = self._pad_sequence(input_ids_batch, self.pad_token_id)
-        attention_mask_padded = self._pad_sequence(attention_mask_batch, 0)
+        input_ids_padded, ml = self._pad_sequence(input_ids_batch, self.pad_token_id)
+        attention_mask_padded, _ = self._pad_sequence(attention_mask_batch, 0)
 
         # Determine the maximum number of entities and sequence length in the batch
         max_num_entities = max(emb.size(0) if emb.numel() > 0 else 0 for emb in embeddings_batch)
-        max_labels_len = max(item.size(1) if item.numel() > 0 else 0 for item in labels_batch)
 
         # Initialize the labels tensor with -100 for padding
-        labels_padded = torch.full((len(batch), max_num_entities, max_labels_len), -100, dtype=torch.float32)
+        ## `labels_padded` length is determined by input_ids in case longest sequence does not have entities
+        labels_padded = torch.full((len(batch), max_num_entities, ml), -100, dtype=torch.float32)
         embeddings_padded = torch.zeros((len(batch), max_num_entities, self.projection_dim), dtype=torch.float32)
 
         for i, (labels, embeddings) in enumerate(zip(labels_batch, embeddings_batch)):
@@ -54,7 +54,7 @@ class nerfitDataCollator:
             length = min(len(seq), max_length)
             padded_sequences[i, :length] = seq[:length].clone().detach()
 
-        return padded_sequences
+        return padded_sequences, max_length
 
 
 # NER data collator
@@ -71,9 +71,9 @@ class nerDataCollator:
         labels_ner_batch = [item['labels'] for item in batch]
 
         # Pad input_ids, attention_mask and NER tags
-        input_ids_padded = self._pad_sequence(input_ids_batch, self.pad_token_id)
-        attention_mask_padded = self._pad_sequence(attention_mask_batch, 0)
-        labels_ner_padded = self._pad_sequence(labels_ner_batch, -100)
+        input_ids_padded, _ = self._pad_sequence(input_ids_batch, self.pad_token_id)
+        attention_mask_padded, _ = self._pad_sequence(attention_mask_batch, 0)
+        labels_ner_padded, _ = self._pad_sequence(labels_ner_batch, -100)
 
         return {
             'input_ids': input_ids_padded,                  # Shape (batch_size, max_num_tokens)
@@ -90,4 +90,4 @@ class nerDataCollator:
             length = min(len(seq), max_length)
             padded_sequences[i, :length] = seq[:length].clone().detach()
 
-        return padded_sequences
+        return padded_sequences, max_length

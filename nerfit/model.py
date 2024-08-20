@@ -49,9 +49,9 @@ class nerfitModel(nn.Module):
 
             if embeddings.size(1) > 0:
                 logits = torch.bmm(embeddings, token_embeddings_normalized.transpose(1, 2))
-                logits = logits * mask
-                labels = labels * mask
-                loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
+                logits_mask = logits * mask
+                labels_mask = labels * mask
+                loss = torch.nn.functional.binary_cross_entropy_with_logits(logits_mask, labels_mask, reduction='sum')
                 loss = loss / mask.sum()
             else:
                 loss = torch.tensor(0.0, device=labels.device)
