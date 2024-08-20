@@ -37,24 +37,13 @@ However, given the rich variety of NER dataset formats available, it's not possi
 }
 ```
 
-### Custom Trainers
-
-Some examples of `Trainer` custom classes for a variety of datasets are provide now:
-
-* [Alexa massive dataset](https://huggingface.co/datasets/AmazonScience/massive):
-
-<details>
-<summary>
-Click to open
-</summary>
-
-Annotations have this structure:
+For instance, [Alexa massive dataset](https://huggingface.co/datasets/AmazonScience/massive) annotations have the following format:
 
 ```text
 [ORG: OpenAI] is based in [LOC: San Francisco].
 ```
 
-Therefore, `_parse_annotation` method should be like:
+Therefore, 
 
 ```python
 # Libraries
@@ -62,7 +51,7 @@ import re
 from typing import List, Union, Dict
 from nerfit import Trainer
 
-# Child class
+# Main class
 class CustomTrainer(Trainer):
     @staticmethod
     def _parse_annotation(
@@ -96,7 +85,6 @@ class CustomTrainer(Trainer):
             output.append({"text": text,"entities": entities})
         return output
 ```
-</details>
 
 
 ### Entity-embeddings lookup table
@@ -108,7 +96,68 @@ One of the cornerstones of this project is to apply a token-level contrastive le
 
 ### Contrastive stage
 
-An insightful idea taken from [nuNER](https://arxiv.org/abs/2402.15343) paper was to leverage weak supervision to tokens.
+An insightful idea taken from [nuNER](https://arxiv.org/abs/2402.15343) paper was to leverage weak supervision to tokens. There are some enhancements, however, that were adressed here:
+
+* Original implementation used the same backbone for both token encoder and sentence-level representation. As BERT-like models do not excel in the latter, we use `SentenceTransformers` models instead; to make latent dimension between both models match, we include a final linear layer at the end of the token encoder, that is later dropped.
+* That also give us higher flexibility to our data, in terms of lexical requirements, languages, etc.
+* Entity descriptions embeddings are not dynamically computed; instead, we build a lookup table that is configured in every batch to our needs.
+* Training code is open source and available for everyone 🤗
+
+
+### Training arguments
+
+We have built a simple wrapper around `transformers` objects to save tons of time of writing boilerplate code; the usage is pretty simple:
+
+```python
+# Libraries
+from safetensors.torch import safe_open
+from nerfit import Trainer, TrainingArguments
+
+# Load entity lookup table
+ent2emb = {}
+with safe_open("./tests/artifacts/ent2emb.safetensors", framework="pt", device="cpu") as f:
+   for key in f.keys():
+       ent2emb[key] = f.get_tensor(key)
+
+# Load smaple data
+with open('./tests/artifacts/sample_data.txt', 'r', encoding='utf-8') as f:
+    annotations = f.read().split('\n')
+
+#Configuration
+args = TrainingArguments(
+    model_name='roberta-base', # pick up any fill-mask model
+    train_annotations=annotations[:100],
+    val_annotations=annotations[100:200],
+    ent2emb=ent2emb,
+    peft_lora=True,
+    peft_config={'lora_r':16,'lora_alpha':16,'lora_dropout':0.1, 'use_dora': True,'inference_mode': False},
+    dataloader_num_workers=(2,2),
+    per_device_train_batch_size=(8,8),
+    per_device_eval_batch_size=(16,16),
+    learning_rate=(5e-5,1e-5),
+    weight_decay=(1e-2,1e-2),
+    lr_scheduler_type='cosine',
+    warmup_steps=(1000,500),
+    fp16=True,
+    gradient_accumulation_steps=(1,1),
+    max_grad_norm=(1.,1.),
+    seed=123,
+    max_steps=(2500,1500),
+    eval_strategy="steps",
+    eval_steps=250,
+    logging_strategy="steps",
+    logging_steps=250,
+    save_strategy="steps",
+    save_steps=250,
+)
+```
+
+Together with the previous `CustomTrainer` object, the usage is straightforward:
+
+```python
+trainer = CustomTrainer(args=args)
+trainer.train()
+```
 
 
 ## Contributing
