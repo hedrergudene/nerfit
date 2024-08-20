@@ -215,7 +215,8 @@ class Trainer:
             greater_is_better=False,
             save_total_limit=1,
             remove_unused_columns=False,
-            push_to_hub=False
+            push_to_hub=False,
+            report_to=args.report_to
         )
         return args_pretraining
     
@@ -246,7 +247,8 @@ class Trainer:
             greater_is_better=True,
             save_total_limit=1,
             remove_unused_columns=False,
-            push_to_hub=False
+            push_to_hub=False,
+            report_to=args.report_to
         )
         return args_ner
 

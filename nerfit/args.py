@@ -50,6 +50,7 @@ class TrainingArguments:
     logging_steps: tuple = (250, 250)
     save_strategy: tuple = ("steps", "steps")
     save_steps: tuple = (250, 250)
+    report_to: str = "none"
 
     def __post_init__(self):
         # Validate the structure of train_annotations and val_annotations
