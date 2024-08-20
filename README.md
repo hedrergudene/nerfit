@@ -104,7 +104,7 @@ Should you provide no reference of `ent2emb`, we make use of large language mode
 
 ### Contrastive stage
 
-An insightful idea taken from [nuNER](https://arxiv.org/abs/2402.15343) paper was to leverage weak supervision to tokens. There are some enhancements, however, that were adressed here:
+An insightful idea taken from [nuNER](https://arxiv.org/abs/2402.15343) paper was to leverage weak supervision to tokens. There are some enhancements, however, that were addressed here:
 
 * Original implementation used the same backbone for both token encoder and sentence-level representation. As BERT-like models do not excel in the latter, we use `SentenceTransformers` models instead; to make latent dimension between both models match, we include a final linear layer at the end of the token encoder, that is later dropped.
 * That also give us higher flexibility to our data, in terms of lexical requirements, languages, etc.
