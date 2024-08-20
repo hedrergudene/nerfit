@@ -1,11 +1,13 @@
 # Libraries
 import torch
-from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainer, TrainingArguments
+import os
+import transformers
+from transformers import AutoTokenizer, AutoModelForTokenClassification
 from peft import PeftModel, PeftModelForTokenClassification, TaskType
 import numpy as np
 from typing import Optional, List, Callable, Dict, Union, Tuple, Any
 import evaluate
-from nerfit.args import nerfitArguments
+from nerfit.args import TrainingArguments
 from nerfit.callbacks import SavePeftModelCallback
 from nerfit.collator import nerfitDataCollator, nerDataCollator
 from nerfit.dataset import nerfitDataset, nerDataset
@@ -14,24 +16,25 @@ from nerfit.utils import build_lookup_table, build_lookup_table_from_string
 
 
 # Main class
-class nerfitTrainer:
-    def __init__(self, config: nerfitArguments, args_pretraining:Optional[TrainingArguments], args_ner: Optional[TrainingArguments]):
+class Trainer:
+    def __init__(self, args: TrainingArguments):
         """
         Args:
-            config (TrainerConfig): Configuration object containing all necessary training parameters.
+            config (TrainingArguments): Configuration object containing all necessary training parameters.
         """
-        self.config = config
+        self.args = args
         self.tokenizer = self._prepare_tokenizer()
-        self.ent2emb = self._prepare_embeddings(config.ent2emb, config.train_annotations, config.val_annotations)
-        self.train_dataset_pretraining, self.val_dataset_pretraining = self._prepare_dataset_pretraining(config.train_annotations, config.val_annotations)
-        self.train_dataset_ner, self.val_dataset_ner = self._prepare_dataset_ner(config.train_annotations, config.val_annotations)
+        self.ent2emb = self._prepare_embeddings(args.ent2emb, args.train_annotations, args.val_annotations)
+        self.train_dataset_pretraining, self.val_dataset_pretraining = self._prepare_dataset_pretraining(args.train_annotations, args.val_annotations)
+        self.train_dataset_ner, self.val_dataset_ner = self._prepare_dataset_ner(args.train_annotations, args.val_annotations)
         self.model = self._prepare_model()
         self.collate_fn = self._prepare_data_collator_pretraining()
         self.collate_fn_ner = self._prepare_data_collator_ner()
-        self.args_pretraining = self._prepare_pretraining_config(args_pretraining)
-        self.args_ner = self._prepare_ner_config(args_ner)
+        self.args_pretraining = self._prepare_pretraining_config(self.args)
+        self.args_ner = self._prepare_ner_config(self.args)
         self.best_ckpt_pretraining_path = None
         self.best_ckpt_ner_path = None
+        self.metric = evaluate.load('seqeval')
 
 
     @staticmethod
@@ -159,7 +162,7 @@ class nerfitTrainer:
         that the model can process.
         """
         # Load the tokenizer using the model name from the configuration
-        return AutoTokenizer.from_pretrained(self.config.model_name)
+        return AutoTokenizer.from_pretrained(self.args.model_name)
 
 
     def _prepare_model(self) -> torch.nn.Module:
@@ -169,10 +172,10 @@ class nerfitTrainer:
         Returns:
             torch.nn.Module: The prepared model.
         """
-        model_name = self.config.model_name
+        model_name = self.args.model_name
         projection_dim = next(iter(self.ent2emb.values())).shape[-1]
-        peft_lora = self.config.peft_lora
-        peft_config = self.config.peft_config
+        peft_lora = self.args.peft_lora
+        peft_config = self.args.peft_config
 
         model = nerfitModel(
             model_name=model_name,
@@ -184,75 +187,64 @@ class nerfitTrainer:
         return model
 
 
-    def _prepare_pretraining_config(self, args_pretraining:Optional[TrainingArguments]) -> TrainingArguments:
-        if args_pretraining is None:
-            args_pretraining = TrainingArguments(
-                output_dir="./nerfit/pretraining",
-                dataloader_num_workers=4,
-                per_device_train_batch_size=8,
-                per_device_eval_batch_size=16,
-                learning_rate=1e-4,
-                weight_decay=1e-2,
-                lr_scheduler_type='cosine',
-                warmup_steps=500,
-                fp16=True,
-                gradient_accumulation_steps=1,
-                max_grad_norm=1.,
-                seed=123,
-                max_steps=1500,
-                eval_strategy="steps",
-                eval_steps=250,
-                logging_strategy="steps",
-                logging_steps=250,
-                save_strategy="steps",
-                save_steps=250,
-                load_best_model_at_end=True,
-                greater_is_better=False,
-                save_total_limit=1,
-                remove_unused_columns=False,
-                push_to_hub=False
-            )
-            return args_pretraining
-        else:
-            args_pretraining.save_strategy="no"
-            args_pretraining.load_best_model_at_end=False
-            args_pretraining.remove_unused_columns=False
-            return args_pretraining
+    def _prepare_pretraining_config(self, args:Optional[TrainingArguments]) -> transformers.TrainingArguments:
+        args_pretraining = transformers.TrainingArguments(
+            output_dir=os.path.join(args.output_dir,'pretraining'),
+            dataloader_num_workers=args.dataloader_num_workers[0],
+            per_device_train_batch_size=args.per_device_train_batch_size[0],
+            per_device_eval_batch_size=args.per_device_eval_batch_size[0],
+            learning_rate=args.learning_rate[0],
+            weight_decay=args.weight_decay[0],
+            lr_scheduler_type=args.lr_scheduler_type[0],
+            warmup_steps=args.warmup_steps[0],
+            fp16=args.fp16[0],
+            gradient_accumulation_steps=args.gradient_accumulation_steps[0],
+            max_grad_norm=args.max_grad_norm[0],
+            seed=args.seed[0],
+            max_steps=args.max_steps[0],
+            eval_strategy=args.eval_strategy[0],
+            eval_steps=args.eval_steps[0],
+            logging_strategy=args.logging_strategy[0],
+            logging_steps=args.logging_steps[0],
+            save_strategy='no',
+            load_best_model_at_end=False,
+            greater_is_better=False,
+            save_total_limit=1,
+            remove_unused_columns=False,
+            push_to_hub=False
+        )
+        return args_pretraining
+    
 
-
-    def _prepare_ner_config(self, args_ner:Optional[TrainingArguments]) -> TrainingArguments:
-        if args_ner is None:
-            args_ner = TrainingArguments(
-                output_dir="./nerfit/ner",
-                dataloader_num_workers=4,
-                per_device_train_batch_size=8,
-                per_device_eval_batch_size=16,
-                learning_rate=1e-4,
-                weight_decay=1e-2,
-                lr_scheduler_type='cosine',
-                warmup_steps=500,
-                bf16=False,
-                fp16=True,
-                gradient_accumulation_steps=1,
-                max_grad_norm=1.,
-                seed=123,
-                max_steps=2000,
-                eval_strategy="steps",
-                eval_steps=250,
-                logging_strategy="steps",
-                logging_steps=250,
-                save_strategy="steps",
-                save_steps=250,
-                metric_for_best_model='eval_overall_f1',
-                load_best_model_at_end=True,
-                greater_is_better=True,
-                save_total_limit=1,
-                remove_unused_columns=False,
-                push_to_hub=False
-            )
-            return args_ner
-        else:
-            return args_ner
+    def _prepare_ner_config(self, args:Optional[TrainingArguments]) -> transformers.TrainingArguments:
+        args_ner = transformers.TrainingArguments(
+            output_dir=os.path.join(args.output_dir,'ner'),
+            dataloader_num_workers=args.dataloader_num_workers[1],
+            per_device_train_batch_size=args.per_device_train_batch_size[1],
+            per_device_eval_batch_size=args.per_device_eval_batch_size[1],
+            learning_rate=args.learning_rate[1],
+            weight_decay=args.weight_decay[1],
+            lr_scheduler_type=args.lr_scheduler_type[1],
+            warmup_steps=args.warmup_steps[1],
+            fp16=args.fp16[1],
+            gradient_accumulation_steps=args.gradient_accumulation_steps[1],
+            max_grad_norm=args.max_grad_norm[1],
+            seed=args.seed[1],
+            max_steps=args.max_steps[1],
+            eval_strategy=args.eval_strategy[1],
+            eval_steps=args.eval_steps[1],
+            logging_strategy=args.logging_strategy[1],
+            logging_steps=args.logging_steps[1],
+            save_strategy=args.save_strategy[1],
+            save_steps=args.save_steps[1],
+            metric_for_best_model='eval_overall_f1',
+            load_best_model_at_end=True,
+            greater_is_better=True,
+            save_total_limit=1,
+            remove_unused_columns=False,
+            push_to_hub=False
+        )
+        return args_ner
 
 
     def train(self):
@@ -275,7 +267,7 @@ class nerfitTrainer:
             eval_dataset=self.val_dataset_pretraining,
             data_collator=self.collate_fn,
             tokenizer=self.tokenizer,
-            callbacks=[SavePeftModelCallback] if self.config.peft_lora else []
+            callbacks=[SavePeftModelCallback] if self.args.peft_lora else []
         )
         trainer.train()
         trainer.model.base_model.save_pretrained(self.args_pretraining.output_dir)
@@ -283,7 +275,7 @@ class nerfitTrainer:
 
 
     def _fit_ner(self) -> None:
-        trainer =  Trainer(
+        trainer =  transformers.Trainer(
             self.model,
             self.args_ner,
             train_dataset=self.train_dataset_ner,
@@ -291,7 +283,7 @@ class nerfitTrainer:
             data_collator=self.collate_fn_ner,
             tokenizer=self.tokenizer,
             compute_metrics=self._compute_metrics,
-            callbacks=[SavePeftModelCallback] if self.config.peft_lora else []
+            callbacks=[SavePeftModelCallback] if self.args.peft_lora else []
         )
         trainer.train()
         self.best_ckpt_ner_path = trainer.state.best_model_checkpoint
@@ -307,7 +299,7 @@ class nerfitTrainer:
             [self.train_dataset_ner.id2label[p] for (p, l) in zip(prediction, label) if l != -100]
             for prediction, label in zip(predictions, labels)
         ]
-        all_metrics = self.config.metric.compute(predictions=true_predictions, references=true_labels)
+        all_metrics = self.metric.compute(predictions=true_predictions, references=true_labels)
         metrics = {}
         for k,v in all_metrics.items():
             if isinstance(v,dict):
@@ -319,9 +311,9 @@ class nerfitTrainer:
 
 
     def _setup_ner_checkpoint(self) -> Union[AutoModelForTokenClassification, PeftModelForTokenClassification]:
-        if self.config.peft_lora:
+        if self.args.peft_lora:
             model = PeftModelForTokenClassification.from_pretrained(
-                model=AutoModelForTokenClassification.from_pretrained(self.config.model_name, num_labels=len(self.train_dataset_ner.id2label)),
+                model=AutoModelForTokenClassification.from_pretrained(self.args.model_name, num_labels=len(self.train_dataset_ner.id2label)),
                 model_id=self.best_ckpt_pretraining_path,
                 is_trainable=True
             )
@@ -331,7 +323,7 @@ class nerfitTrainer:
 
 
 # Huggingface wrapper for pretraining stage
-class CustomPreTrainer(Trainer):
+class CustomPreTrainer(transformers.Trainer):
     def compute_loss(self, model, inputs, return_outputs=False):
         """
         How the loss is computed by Trainer. By default, all models return the loss in the first element.

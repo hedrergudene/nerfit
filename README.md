@@ -98,12 +98,17 @@ class CustomTrainer(Trainer):
 ```
 </details>
 
+
 ### Entity-embeddings lookup table
 
 One of the cornerstones of this project is to apply a token-level contrastive learning stage, based upon entities description embeddings provided by a [`Sentence Transformers`](https://sbert.net/) model. As we do not aim, however, to train open-domain models with a plethora of entities and descriptions resulting of LLM knowledge distilation (see nuNER reference), we can efficiently build a lookup mapping of entities and embedding representations, instead of dynamically compute them.
 
 <img src="images/dataset.PNG"  width="100%" height="70%" style="display: block; margin: 0 auto">
 
+
+### Contrastive stage
+
+An insightful idea taken from [nuNER](https://arxiv.org/abs/2402.15343) paper was to leverage weak supervision to tokens.
 
 
 ## Contributing
