@@ -19,7 +19,7 @@ In the fast-evolving world of Machine Learning, innovative methods about buildin
 * Modularity: Build your model using any data, with any models, in any language. Democratization at its finest!
 * Speed: Encoder models and parameter-efficient strategies make both training and inference blazing fast.
 * Efficiency: A smart combination of weak and strong supervision overcomes large data needs in NER settings. Also, [Parameter Efficient Fine Tuning](https://github.com/huggingface/peft) methods can applied to enhance training stability and overall performance.
-* Simplicity: Built upon [Huggingface's `Trainer` class](https://huggingface.co/docs/transformers/main_classes/trainer) to avoid rewriting boilerplate code. Adapt our `nerfitTrainer` class with your data parsing method, and you're good to go!
+* Simplicity: Built upon [Huggingface's `Trainer` class](https://huggingface.co/docs/transformers/main_classes/trainer) to avoid rewriting boilerplate code. Adapt our `Trainer` class with your data parsing method, and you're good to go!
 
 
 ## Methods
@@ -101,6 +101,7 @@ An insightful idea taken from [nuNER](https://arxiv.org/abs/2402.15343) paper wa
 * Original implementation used the same backbone for both token encoder and sentence-level representation. As BERT-like models do not excel in the latter, we use `SentenceTransformers` models instead; to make latent dimension between both models match, we include a final linear layer at the end of the token encoder, that is later dropped.
 * That also give us higher flexibility to our data, in terms of lexical requirements, languages, etc.
 * Entity descriptions embeddings are not dynamically computed; instead, we build a lookup table that is configured in every batch to our needs.
+* Authors indicate that contrastive learning stage is fairly unstable if the whole neural network is optimized, and they opt for optimizing the last few layers of the neetwork instead. In our code, parameter efficient fine tuning methods are available to make this stage more robust and general.
 * Training code is open source and available for everyone 🤗
 
 
