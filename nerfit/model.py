@@ -45,20 +45,14 @@ class nerfitModel(nn.Module):
         token_embeddings_normalized = F.normalize(token_embeddings_projected, p=2, dim=-1)
 
         if ((labels is not None) & (embeddings is not None)):
-            mask = (labels != -100).float()  # Convert mask to float for multiplication
+            mask = (labels != -100)
 
             if embeddings.size(1) > 0:
-                # Expand mask to shape (batch_size, num_entities, num_tokens)
-                mask_expanded = mask.unsqueeze(1).expand(-1, embeddings.size(0), -1)
-
-                # Perform element-wise multiplication
                 logits = torch.bmm(embeddings, token_embeddings_normalized.transpose(1, 2))
-                logits = logits * mask_expanded
-                labels = labels * mask_expanded
-
-                # Compute loss
+                logits = logits * mask
+                labels = labels * mask
                 loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, reduction='sum')
-                loss = loss / mask_expanded.sum()
+                loss = loss / mask.sum()
             else:
                 loss = torch.tensor(0.0, device=labels.device)
             
