@@ -263,9 +263,6 @@ class Trainer:
 
 
     def _fit_pretraining(self) -> str:
-        """
-        The main training loop that iterates through training steps, logs metrics, evaluates the model, and saves checkpoints.
-        """
         trainer = CustomPreTrainer(
             self.model,
             self.args_pretraining,
